@@ -25,7 +25,7 @@ export const loginWithKakao = (
 };
 
 export const loginWithApple = async (identityToken: string, authorizationCode: string) => {
-  const res = await axios.post('${API}/auth/apple', {
+  const res = await axios.post(`${API}/auth/apple`, {
     identityToken,
     authorizationCode,
   });

@@ -115,8 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     addressDetail?: string
   ) => {
     try {
-      const res = await axios.post('${API}/register', {
-        isGuest: true,
+      const res = await axios.post(`${API}/auth/guest`, {
         name,
         phone,
         address,

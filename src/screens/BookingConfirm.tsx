@@ -1,5 +1,5 @@
 // BookingConfirm.tsx
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Crypto from 'expo-crypto';
 import axios from 'axios';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
@@ -43,7 +44,7 @@ type ConfirmRoute = RouteProp<RootStackParamList, 'Confirm'>;
 type ConfirmNav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function BookingConfirm() {
-  const { token, currentUser, isGuestMode } = useAuth();
+  const { token, currentUser } = useAuth();
   const navigation = useNavigation<ConfirmNav>();
   const route = useRoute<ConfirmRoute>();
 
@@ -66,6 +67,8 @@ export default function BookingConfirm() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [symptom, setSymptom] = useState(symptomFromRoute);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submissionRef = useRef<{ fingerprint: string; id: string } | null>(null);
 
   const fetchSlots = async (day: Date) => {
     const yyyyMMdd = day.toISOString().slice(0, 10);
@@ -100,47 +103,54 @@ export default function BookingConfirm() {
   const totalPrice = tier.price === -1 ? -1 : tier.price + totalExtraCost;
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
     if (!selectedSlot) {
       Alert.alert('오류', '예약 시간을 선택해주세요.');
       return;
     }
 
-    const payload = {
-      subtypeId: subtype._id,
-      serviceTypeId: serviceType._id,
-      tier: tier.tier,
-      options: selectedOptions.map(o => ({ option: o._id, choice: o.selectedValue })),
-      reservationDate: reservationDate.toISOString().split('T')[0],
-      reservationTime: selectedSlot,
-      totalPrice,
+    const bookingDetails = {
+      asset_id: subtype._id,
+      service_type: serviceType.name,
+      subtype: subtype.name,
+      name: currentUser?.name ?? '게스트',
+      phone: currentUser?.phone,
+      address: currentUser?.address,
+      reservation_date: reservationDate.toISOString().split('T')[0],
+      reservation_time: selectedSlot,
+      ...(totalPrice >= 0 ? { total_price: totalPrice } : {}),
       symptom: serviceType.name === 'fix' ? symptom : '',
-      ...(currentUser?._id ? { user: currentUser._id } : {}),
     };
+    const fingerprint = JSON.stringify(bookingDetails);
+    if (!submissionRef.current || submissionRef.current.fingerprint !== fingerprint) {
+      submissionRef.current = { fingerprint, id: Crypto.randomUUID() };
+    }
+    const clientRequestId = submissionRef.current.id;
+    const payload = { ...bookingDetails, client_request_id: clientRequestId };
 
+    setIsSubmitting(true);
     try {
-      if (isGuestMode && currentUser?.isGuest) {
-        await axios.post(
-          '${API}/guests/booking',
-          {
-            name: currentUser.name,
-            phone: currentUser.phone,
-            address: currentUser.address,
-            ...payload,
-          },
-        );
-      } else {
-        await axios.post(
-          '${API}/booking',
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-      }
+      await axios.post(`${API}/bookings`, payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': clientRequestId,
+        },
+      });
+      submissionRef.current = null;
       Alert.alert('예약 완료', '서비스가 성공적으로 예약되었습니다.');
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Booking failed:', err);
-      Alert.alert('오류', '예약에 실패했습니다.');
+      const code = err.response?.data?.code;
+      Alert.alert(
+        '오류',
+        code === 'BOOKING_SLOT_UNAVAILABLE'
+          ? '이미 선택된 예약 시간입니다.'
+          : '예약에 실패했습니다. 다시 시도해도 중복 예약은 생성되지 않습니다.',
+      );
       fetchSlots(reservationDate);
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
@@ -255,8 +265,12 @@ export default function BookingConfirm() {
           </ScrollView>
         </View>
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitText}>예약 확정</Text>
+        <TouchableOpacity
+          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={isSubmitting}
+        >
+          <Text style={styles.submitText}>{isSubmitting ? '예약 처리 중' : '예약 확정'}</Text>
         </TouchableOpacity>
       </ScrollView>
     </LinearGradient>
@@ -350,6 +364,9 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     marginTop: 30,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
   submitText: {
     fontFamily: 'Pretendard-Bold',

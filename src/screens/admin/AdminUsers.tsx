@@ -1,66 +1,119 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, FlatList, StyleSheet,
-  TouchableOpacity, Image, Alert,
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
-import axios from 'axios';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  AdminBottomNav,
+  AppHeader,
+  AppScreen,
+  Button,
+  Card,
+  PageIntro,
+  StateView,
+} from '../../components';
 import { useAuth } from '../../context/AuthContext';
+import type { UserProfile } from '../../domain';
+import { colors, fonts, layout, radius, spacing } from '../../theme/tokens';
 
-const API = process.env.SERVER_API;
-
-interface User {
-  _id: string;
-  name: string;
-  phone: string;
-  email: string;
-  isAdmin: boolean;
+function valueOrFallback(value: string | null | undefined) {
+  return value?.trim() || '미등록';
 }
 
 export default function AdminUsers() {
-  const { token } = useAuth();
-  const navigation = useNavigation<any>();
-  const [users, setUsers] = useState<User[]>([]);
+  const { api } = useAuth();
+  const [users, setUsers] = useState<readonly UserProfile[]>([]);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
-  /* -------- fetch -------- */
-  const fetchUsers = async () => {
-    try {
-      const res = await axios.get(
-        `${API}/admin/users`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      setUsers(res.data);
-    } catch (err) {
-      console.error(err);
-      Alert.alert('오류', '유저 목록을 불러오지 못했습니다.');
+  const fetchUsers = useCallback(async () => {
+    if (!api) {
+      setError('V2 API가 아직 설정되지 않았습니다.');
+      setLoading(false);
+      return;
     }
-  };
-  useEffect(() => { fetchUsers(); }, []);
 
-  /* -------- promote / demote -------- */
-  const toggleAdmin = (user: User) => {
-    const makeAdmin = !user.isAdmin;
+    setLoading(true);
+    setError(null);
+    try {
+      const firstPage = await api.admin.list('users', {
+        page: 1,
+        pageSize: 100,
+        sort: 'created_at',
+        direction: 'desc',
+      });
+      const allUsers = [...firstPage.data];
+      const pageCount = Math.ceil(firstPage.total / firstPage.pageSize);
+
+      for (let page = 2; page <= pageCount; page += 1) {
+        const nextPage = await api.admin.list('users', {
+          page,
+          pageSize: firstPage.pageSize,
+          sort: 'created_at',
+          direction: 'desc',
+        });
+        allUsers.push(...nextPage.data);
+      }
+
+      setUsers(allUsers);
+    } catch (requestError) {
+      console.error('fetchUsers error', requestError);
+      setError('사용자 목록을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchUsers();
+    }, [fetchUsers]),
+  );
+
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (!normalizedQuery) return users;
+
+    return users.filter(user =>
+      [user.name, user.phone, user.email]
+        .some(value => value?.toLocaleLowerCase().includes(normalizedQuery)),
+    );
+  }, [query, users]);
+
+  const adminCount = users.filter(user => user.isAdmin).length;
+  const customerCount = users.length - adminCount;
+
+  const deleteUser = (user: UserProfile) => {
     Alert.alert(
-      makeAdmin ? '관리자 부여' : '관리자 해제',
-      `${user.name ?? '이 유저'}에게 ${
-        makeAdmin ? '관리자 권한을 부여' : '관리자 권한을 해제'
-      }하시겠습니까?`,
+      '사용자 삭제',
+      `${user.name || '이 사용자'}의 계정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`,
       [
         { text: '취소', style: 'cancel' },
         {
-          text: '확인',
+          text: '삭제',
+          style: 'destructive',
           onPress: async () => {
+            if (!api) return;
+            setBusyUserId(user.id);
             try {
-              await axios.patch(
-                `${API}/admin/users/${user._id}/role`,
-                  { isAdmin: makeAdmin },
-                  { headers: { Authorization: `Bearer ${token}` } },
-              );
-              fetchUsers();
-            } catch (err) {
-              console.error(err);
-              Alert.alert('오류', '역할 변경 실패');
+              await api.admin.remove('users', user.id);
+              await fetchUsers();
+            } catch (requestError) {
+              console.error('deleteUser error', requestError);
+              Alert.alert('오류', '사용자를 삭제하지 못했습니다.');
+            } finally {
+              setBusyUserId(null);
             }
           },
         },
@@ -68,147 +121,419 @@ export default function AdminUsers() {
     );
   };
 
-  /* -------- delete user (unchanged) -------- */
-  const deleteUser = (id: string) => {
-    Alert.alert('삭제 확인', '정말로 이 사용자를 삭제하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제', style: 'destructive',
-        onPress: async () => {
-          try {
-            await axios.delete(
-              `${API}/admin/users/${id}`,
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
-            fetchUsers();
-          } catch {
-            Alert.alert('오류', '사용자 삭제 실패');
-          }
-        },
-      },
-    ]);
-  };
+  const headerAction = (
+    <Pressable
+      onPress={() => void fetchUsers()}
+      disabled={loading}
+      accessibilityRole="button"
+      accessibilityLabel="사용자 목록 새로고침"
+      accessibilityState={{ disabled: loading, busy: loading }}
+      style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
+    >
+      <Ionicons name="refresh" size={21} color={loading ? colors.disabled : colors.primary} />
+    </Pressable>
+  );
 
   return (
-    <LinearGradient colors={['#d0eaff', '#89c4f4']} style={styles.wrapper}>
-      <View style={styles.container}>
-        <Text style={styles.title}>유저 관리</Text>
+    <AppScreen
+      padded={false}
+      contentStyle={styles.screenContent}
+      footer={
+        <SafeAreaView edges={['bottom']} style={styles.navSafeArea}>
+          <AdminBottomNav active="AdminUsers" />
+        </SafeAreaView>
+      }
+    >
+      <AppHeader title="사용자 관리" showBrand action={headerAction} />
 
-        <FlatList
-          data={users}
-          keyExtractor={u => u._id}
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <Image
-                source={require('.././asset/icons/user.png')}
-                style={styles.icon}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.sub}>{item.phone}</Text>
-                <Text style={styles.sub}>{item.email}</Text>
-                <Text style={styles.role}>
-                  역할: {item.isAdmin ? '관리자' : '일반'}
-                </Text>
-              </View>
-
-              {/* promote / demote */}
-              <TouchableOpacity onPress={() => toggleAdmin(item)}>
-                <Image
-                  source={
-                    item.isAdmin
-                      ? require('.././asset/icons/remove-admin.png')  /* red icon */
-                      : require('.././asset/icons/make-admin.png')    /* blue icon */
-                  }
-                  style={[
-                    styles.actionIcon,
-                    { tintColor: item.isAdmin ? '#d32f2f' : '#007BFF' },
-                  ]}
-                />
-              </TouchableOpacity>
-
-              {/* delete (disabled for admins) */}
-              {!item.isAdmin && (
-                <TouchableOpacity onPress={() => deleteUser(item._id)}>
-                  <Image
-                    source={require('.././asset/icons/delete-user.png')}
-                    style={styles.actionIcon}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
+      <View style={styles.body}>
+        <PageIntro
+          title="사용자"
+          description="계정 정보를 확인하고 관리자 권한을 안전하게 관리하세요."
         />
-      </View>
 
-      {/* footer */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.footerItem}
-          onPress={() => navigation.navigate('AdminDashboard')}
-        >
-          <Image source={require('.././asset/icons/home.png')} style={styles.footerIcon} />
-          <Text style={styles.footerText}>홈</Text>
-        </TouchableOpacity>
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryValue}>{users.length.toLocaleString()}</Text>
+            <Text style={styles.summaryLabel}>전체 계정</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryValue}>{customerCount.toLocaleString()}</Text>
+            <Text style={styles.summaryLabel}>일반 고객</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryValue}>{adminCount.toLocaleString()}</Text>
+            <Text style={styles.summaryLabel}>관리자</Text>
+          </View>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.footerItem, styles.activeTab]}
-          onPress={() => {/* already here */}}
-        >
-          <Image
-            source={require('.././asset/icons/user.png')}
-            style={[styles.footerIcon, styles.activeIcon]}
+        <View style={styles.searchGroup}>
+          <Text style={styles.searchLabel}>사용자 검색</Text>
+          <View style={styles.searchField}>
+            <Ionicons name="search" size={20} color={colors.textMuted} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="이름, 연락처 또는 이메일"
+              placeholderTextColor={colors.disabled}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="사용자 검색"
+              style={styles.searchInput}
+            />
+            {query ? (
+              <Pressable
+                onPress={() => setQuery('')}
+                accessibilityRole="button"
+                accessibilityLabel="검색어 지우기"
+                hitSlop={8}
+                style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.capabilityNotice} accessibilityRole="summary">
+          <Ionicons name="shield-outline" size={19} color={colors.textSecondary} />
+          <Text style={styles.capabilityNoticeText}>
+            관리자 권한은 V2 보호 필드입니다. 이 화면에서는 계정 조회와 일반 고객 삭제만 지원합니다.
+          </Text>
+        </View>
+
+        {error && users.length > 0 ? (
+          <View style={styles.inlineError} accessibilityRole="alert">
+            <Ionicons name="alert-circle-outline" size={19} color={colors.danger} />
+            <Text style={styles.inlineErrorText}>{error}</Text>
+          </View>
+        ) : null}
+
+        {loading && users.length === 0 ? (
+          <StateView title="사용자 목록을 불러오는 중입니다" loading />
+        ) : error && users.length === 0 ? (
+          <StateView
+            title="사용자 목록을 불러오지 못했습니다"
+            message="연결 상태를 확인한 뒤 다시 시도해 주세요."
+            icon="cloud-offline-outline"
+            actionLabel="다시 시도"
+            onAction={() => void fetchUsers()}
           />
-          <Text style={[styles.footerText, styles.activeText]}>유저</Text>
-        </TouchableOpacity>
+        ) : (
+          <FlatList
+            data={filteredUsers}
+            keyExtractor={user => user.id}
+            style={styles.list}
+            contentContainerStyle={[
+              styles.listContent,
+              filteredUsers.length === 0 && styles.emptyListContent,
+            ]}
+            keyboardShouldPersistTaps="handled"
+            refreshing={loading}
+            onRefresh={() => void fetchUsers()}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <StateView
+                title={query ? '검색 결과가 없습니다' : '등록된 사용자가 없습니다'}
+                message={query ? '다른 이름, 연락처 또는 이메일로 검색해 보세요.' : undefined}
+                icon="people-outline"
+              />
+            }
+            renderItem={({ item }) => {
+              const busy = busyUserId === item.id;
+              const initial = item.name?.trim().charAt(0) || '?';
 
-        <TouchableOpacity
-          style={styles.footerItem}
-          onPress={() => navigation.navigate('AdminBookings')}
-        >
-          <Image source={require('.././asset/icons/view-order.png')} style={styles.footerIcon} />
-          <Text style={styles.footerText}>예약</Text>
-        </TouchableOpacity>
+              return (
+                <Card style={styles.userCard}>
+                  <View style={styles.userHeader}>
+                    <View style={styles.avatar} accessibilityElementsHidden>
+                      <Text style={styles.avatarText}>{initial}</Text>
+                    </View>
+                    <View style={styles.userIdentity}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.name} numberOfLines={1}>
+                          {valueOrFallback(item.name)}
+                        </Text>
+                        <View
+                          style={[styles.roleBadge, item.isAdmin && styles.adminRoleBadge]}
+                          accessibilityLabel={item.isAdmin ? '관리자 계정' : '일반 고객 계정'}
+                        >
+                          <Text style={[styles.roleBadgeText, item.isAdmin && styles.adminRoleBadgeText]}>
+                            {item.isAdmin ? '관리자' : '고객'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Ionicons name="call-outline" size={16} color={colors.textMuted} />
+                        <Text style={styles.detailText} numberOfLines={1}>
+                          {valueOrFallback(item.phone)}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Ionicons name="mail-outline" size={16} color={colors.textMuted} />
+                        <Text style={styles.detailText} numberOfLines={1}>
+                          {valueOrFallback(item.email)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
 
-        <TouchableOpacity
-          style={styles.footerItem}
-          onPress={() => navigation.navigate('AdminSettings')}
-        >
-          <Image source={require('.././asset/icons/settings.png')} style={styles.footerIcon} />
-          <Text style={styles.footerText}>설정</Text>
-        </TouchableOpacity>
+                  {item.isAdmin ? (
+                    <View style={styles.protectedRow}>
+                      <Ionicons name="lock-closed-outline" size={16} color={colors.textMuted} />
+                      <Text style={styles.protectedText}>보호된 관리자 계정</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.actionRow}>
+                      <Button
+                        label="삭제"
+                        icon="trash-outline"
+                        variant="danger"
+                        fullWidth={false}
+                        disabled={busyUserId !== null}
+                        onPress={() => deleteUser(item)}
+                        style={styles.deleteButton}
+                      />
+                    </View>
+                  )}
+                </Card>
+              );
+            }}
+          />
+        )}
       </View>
-    </LinearGradient>
+    </AppScreen>
   );
 }
 
-/* ------ styles (unchanged except role text) ------ */
 const styles = StyleSheet.create({
-  wrapper: { flex: 1 },
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 24 },
-  title: { fontFamily: 'JalnanGothic', fontSize: 28, color: '#010198', textAlign: 'center', marginBottom: 24 },
-  row: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', padding: 16, borderRadius: 12, marginBottom: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1, shadowRadius: 2, elevation: 2,
+  screenContent: {
+    flex: 1,
   },
-  icon: { width: 40, height: 40, tintColor: '#007BFF', marginRight: 12 },
-  actionIcon: { width: 24, height: 24, marginLeft: 12 },
-  name: { fontFamily: 'Pretendard-Bold', fontSize: 16, color: '#333' },
-  sub: { fontFamily: 'Pretendard-Regular', fontSize: 13, color: '#555' },
-  role: { fontFamily: 'Pretendard-Regular', fontSize: 13, color: '#999', marginTop: 4 },
-  footer: {
-    flexDirection: 'row', justifyContent: 'space-around', width: '100%',
-    borderTopWidth: 1, borderColor: '#dbe9f9', backgroundColor: '#fff',
-    paddingVertical: 10, borderTopLeftRadius: 16, borderTopRightRadius: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.1, shadowRadius: 4, elevation: 5,
+  navSafeArea: {
+    backgroundColor: colors.surface,
   },
-  footerItem: { alignItems: 'center', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 16 },
-  footerIcon: { width: 24, height: 24, tintColor: '#90a4ae', marginBottom: 4 },
-  footerText: { fontSize: 12, fontFamily: 'Pretendard-Regular', color: '#90a4ae' },
-  activeTab: { backgroundColor: '#d0eaff' },
-  activeIcon: { tintColor: '#007BFF' },
-  activeText: { color: '#007BFF', fontFamily: 'Pretendard-Bold' },
+  headerAction: {
+    width: layout.minTouchTarget,
+    height: layout.minTouchTarget,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: {
+    opacity: 0.72,
+    backgroundColor: colors.primarySubtle,
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: layout.horizontalPadding,
+    paddingTop: spacing.xl,
+  },
+  summaryRow: {
+    minHeight: 82,
+    marginBottom: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  summaryItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+  },
+  summaryValue: {
+    fontFamily: fonts.bold,
+    fontSize: 21,
+    lineHeight: 27,
+    color: colors.text,
+  },
+  summaryLabel: {
+    marginTop: spacing.xxs,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textMuted,
+  },
+  searchGroup: {
+    marginBottom: spacing.md,
+  },
+  searchLabel: {
+    marginBottom: spacing.xs,
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  searchField: {
+    minHeight: layout.minTouchTarget + 6,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchInput: {
+    flex: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.text,
+  },
+  clearButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  capabilityNotice: {
+    marginBottom: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.disabledSoft,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  capabilityNoticeText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  inlineError: {
+    marginBottom: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSoft,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inlineErrorText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.danger,
+  },
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: spacing.xxl,
+  },
+  emptyListContent: {
+    flexGrow: 1,
+  },
+  userCard: {
+    marginBottom: spacing.sm,
+  },
+  userHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  avatar: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+  },
+  avatarText: {
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    lineHeight: 23,
+    color: colors.primaryDark,
+  },
+  userIdentity: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  name: {
+    maxWidth: '72%',
+    fontFamily: fonts.semibold,
+    fontSize: 17,
+    lineHeight: 23,
+    color: colors.text,
+  },
+  roleBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.disabledSoft,
+  },
+  adminRoleBadge: {
+    backgroundColor: colors.primarySoft,
+  },
+  roleBadgeText: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    lineHeight: 15,
+    color: colors.textSecondary,
+  },
+  adminRoleBadgeText: {
+    color: colors.primaryDark,
+  },
+  detailRow: {
+    marginTop: spacing.xxs,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textSecondary,
+  },
+  actionRow: {
+    marginTop: spacing.lg,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
+  },
+  protectedRow: {
+    minHeight: layout.minTouchTarget,
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  protectedText: {
+    marginLeft: spacing.xs,
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textMuted,
+  },
+  deleteButton: {
+    minWidth: 112,
+  },
 });

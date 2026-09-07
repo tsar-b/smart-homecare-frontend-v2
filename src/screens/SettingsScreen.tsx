@@ -1,514 +1,553 @@
-// src/screens/SettingsScreen.tsx
-import React, { useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { ApiError } from '../api';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image,
-  Alert, TextInput, ScrollView,
-} from 'react-native';
-import {
-  useNavigation,
-  RouteProp,
-  useRoute,
-} from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LinearGradient } from 'expo-linear-gradient';
-import axios from 'axios';
-import * as KakaoLogins from '@react-native-seoul/kakao-login';
+  AppHeader,
+  AppScreen,
+  Button,
+  Card,
+  CustomerBottomNav,
+  FormField,
+  PageIntro,
+  SectionTitle,
+  StateView,
+} from '../components';
 import { useAuth } from '../context/AuthContext';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import type { UpdateProfileInput, UserProfile } from '../domain';
+import type { RootStackParamList } from '../navigation/AppNavigator';
+import { colors, fonts, radius, spacing } from '../theme/tokens';
 
-const API = process.env.SERVER_API;
-const SERVER_URL= process.env.SERVER_URL;
+type SettingsNavigation = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
+type SettingsRoute = RouteProp<RootStackParamList, 'Settings'>;
+type EditableField = 'name' | 'phone';
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-/* ---------- nav / route generics ---------- */
-type SetNav   = NativeStackNavigationProp<RootStackParamList>;
-type SetRoute = RouteProp<RootStackParamList, 'Settings'>;
+function settingsErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.code === 'REQUEST_CANCELLED') return '';
+    if (error.status === 401) return '로그인 정보가 만료되었습니다. 다시 로그인해 주세요.';
+    if (error.code === 'NETWORK_ERROR') return '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.';
+  }
+  return '정보를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+}
 
-export default function SettingsScreen() {
-  const navigation = useNavigation<SetNav>();
-  useRoute<SetRoute>();            // only to satisfy unused param warning
-  const { logout, token, guestId } = useAuth();
+function providerLabel(provider: string | null): string {
+  switch (provider) {
+    case 'standard': return '이메일 계정';
+    case 'guest': return '비회원 계정';
+    case 'kakao': return '카카오 계정';
+    case 'apple': return 'Apple 계정';
+    default: return provider ? `${provider} 계정` : '계정 정보 없음';
+  }
+}
 
-  const [userInfo, setUserInfo] = useState({
-    name: '',
-    phone: '',
-    address: '',
-    isGuest: false,
-    provider: 'guest' as 'guest' | 'standard' | 'kakao',
-  });
+function displayPhone(phone: string | null): string {
+  if (!phone) return '미등록';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return phone;
+}
 
-  /* ---------- editable fields ---------- */
-  const [editField, setEditField] = useState<null | 'name' | 'phone' | 'password'>(null);
+function SettingsScreen() {
+  const navigation = useNavigation<SettingsNavigation>();
+  const route = useRoute<SettingsRoute>();
+  const {
+    api,
+    configurationError,
+    currentUser,
+    logout,
+    refreshProfile,
+  } = useAuth();
+  const [profile, setProfile] = useState<UserProfile | null>(currentUser);
+  const [loading, setLoading] = useState(!currentUser);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditableField | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [savingField, setSavingField] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [accountAction, setAccountAction] = useState<'logout' | null>(null);
 
-  /* ---------- fetch user ---------- */
+  const selectedAddress = route.params?.selectedAddress;
+  const selectedAddressDetail = route.params?.selectedAddressDetail;
+
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedAddress) {
+        setLoading(false);
+        return undefined;
+      }
+
+      let active = true;
+      setLoading(true);
+
+      void refreshProfile()
+        .then((fresh) => {
+          if (!active || !fresh) return;
+          setProfile(fresh);
+          setError(null);
+        })
+        .catch((caught) => {
+          if (active) setError(settingsErrorMessage(caught));
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+
+      return () => {
+        active = false;
+      };
+    }, [refreshProfile, selectedAddress]),
+  );
+
   useEffect(() => {
-    const fetchMe = async () => {
+    if (!selectedAddress) return;
+    let active = true;
+    const controller = new AbortController();
+
+    const saveReturnedAddress = async () => {
+      if (!api) {
+        setError(configurationError ?? '서버 연결 설정이 필요합니다.');
+        navigation.setParams({ selectedAddress: undefined, selectedAddressDetail: undefined });
+        return;
+      }
+
+      setSavingAddress(true);
+      setError(null);
       try {
-        if (token) {
-          const { data } = await axios.get(
-            `${API}/users/me`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
-          setUserInfo({
-            name: data.name ?? '',
-            phone: formatPhone(data.phone ?? ''),
-            address: data.address ?? '',
-            isGuest: data.isGuest ?? false,
-            provider: data.provider ?? 'standard',
-          });
-        } else if (guestId) {
-          const { data } = await axios.get(
-            `${API}/guests/${guestId}`
-          );
-          setUserInfo({
-            name: data.name ?? '',
-            phone: formatPhone(data.phone ?? ''),
-            address: data.address ?? '',
-            isGuest: true,
-            provider: data.provider ?? 'guest',
-          });
+        const updated = await api.profile.update(
+          {
+            address: selectedAddress,
+            addressDetail: selectedAddressDetail?.trim() || '',
+          },
+          { signal: controller.signal },
+        );
+        if (!active) return;
+        setProfile((current) => current ? { ...current, ...updated } : current);
+      } catch (caught) {
+        if (active) {
+          const message = settingsErrorMessage(caught);
+          if (message) setError(`주소를 저장하지 못했습니다. ${message}`);
         }
-      } catch {
-        Alert.alert('오류', '사용자 정보를 불러오는 데 실패했습니다.');
+      } finally {
+        if (active) {
+          setSavingAddress(false);
+          navigation.setParams({ selectedAddress: undefined, selectedAddressDetail: undefined });
+        }
       }
     };
-  
-    fetchMe();
-  }, [token, guestId]);
-  
 
-  /* ---------- delete account ---------- */
-  const handleDeleteAccount = () => {
-    Alert.alert('계정 삭제 확인', '정말로 계정을 삭제하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제', style: 'destructive',
-        onPress: async () => {
-          try {
-              await axios.delete(
-              `${API}/users/me`,
-              { headers: { Authorization: `Bearer ${token}` } }
-              );
-  
-            Alert.alert('삭제 완료', '계정이 삭제되었습니다.', [
-              {
-                text: '확인',
-                onPress: () => {
-                  logout();
-                  navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-                },
-              },
-            ]);
-          } catch {
-            Alert.alert('오류', '계정 삭제에 실패했습니다.');
-          }
-        },
-      },
-    ]);
+    void saveReturnedAddress();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [api, configurationError, navigation, selectedAddress, selectedAddressDetail]);
+
+  const startEditing = (field: EditableField) => {
+    setEditing(field);
+    setFieldError(null);
+    setEditValue(field === 'name' ? profile?.name ?? '' : profile?.phone ?? '');
   };
-  
-  /* ---------- helpers for each field ---------- */
-  const saveField = async (field: 'name' | 'phone' | 'password', value: string) => {
+
+  const cancelEditing = () => {
+    setEditing(null);
+    setEditValue('');
+    setFieldError(null);
+  };
+
+  const saveField = async () => {
+    if (!api || !editing) {
+      setFieldError(configurationError ?? '서버 연결 설정이 필요합니다.');
+      return;
+    }
+
+    const trimmed = editValue.trim();
+    if (editing === 'name' && trimmed.length < 2) {
+      setFieldError('이름은 2자 이상 입력해 주세요.');
+      return;
+    }
+
+    const phoneDigits = trimmed.replace(/\D/g, '');
+    if (editing === 'phone' && (phoneDigits.length < 9 || phoneDigits.length > 11)) {
+      setFieldError('연락처는 숫자 9~11자리로 입력해 주세요.');
+      return;
+    }
+
+    const patch: UpdateProfileInput = editing === 'name'
+      ? { name: trimmed }
+      : { phone: phoneDigits };
+
+    setSavingField(true);
+    setFieldError(null);
     try {
-      const { data } = await axios.patch(
-        `${API}/users/me`,
-        { [field]: value },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      setUserInfo(cur => ({ ...cur, [field]: data[field] }));
-      setEditField(null);
-    } catch {
-      Alert.alert('오류', `${field} 변경 실패`);
+      const updated = await api.profile.update(patch);
+      setProfile((current) => current ? { ...current, ...updated } : current);
+      setEditing(null);
+      setEditValue('');
+    } catch (caught) {
+      setFieldError(settingsErrorMessage(caught));
+    } finally {
+      setSavingField(false);
     }
   };
 
-  const cleanPhone = (p: string) => p.replace(/\D/g, '');
-
-  const formatPhone = (p: string) => {
-    const d = cleanPhone(p);
-    return d.length === 11 ? `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}` : p;
+  const handleLogout = async () => {
+    setAccountAction('logout');
+    try {
+      await logout();
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    } catch (caught) {
+      setError(settingsErrorMessage(caught));
+      setAccountAction(null);
+    }
   };
 
-  const handleUnlinkAndDeleteKakao = () => {
-  Alert.alert('카카오 연동 해제', '정말로 카카오 연동을 해제하시겠습니까?', [
-    { text: '취소', style: 'cancel' },
-    {
-      text: '해제',
-      style: 'destructive',
-      onPress: async () => {
-        try {
-          // 1.  device-side unlink
-          await KakaoLogins.unlink();            // <-- import * as KakaoLogins …
+  if (loading && !profile) {
+    return (
+      <AppScreen padded={false} footer={<CustomerBottomNav active="Settings" />}>
+        <AppHeader title="내 정보" showBrand />
+        <StateView title="내 정보를 불러오는 중입니다" loading />
+      </AppScreen>
+    );
+  }
 
-          // 2.  server-side unlink & user cleanup
-         await axios.delete(
-          `${API}/kakao/delete`,
-          { headers: { Authorization: `Bearer ${token}` } }
-          );
+  if (!profile) {
+    return (
+      <AppScreen padded={false} footer={<CustomerBottomNav active="Settings" />}>
+        <AppHeader title="내 정보" showBrand />
+        <StateView
+          title="내 정보를 불러오지 못했습니다"
+          message={error ?? configurationError ?? '로그인 상태를 확인해 주세요.'}
+          icon="person-circle-outline"
+          actionLabel="다시 시도"
+          onAction={() => {
+            setLoading(true);
+            void refreshProfile()
+              .then((fresh) => {
+                if (fresh) setProfile(fresh);
+                setError(null);
+              })
+              .catch((caught) => setError(settingsErrorMessage(caught)))
+              .finally(() => setLoading(false));
+          }}
+        />
+      </AppScreen>
+    );
+  }
 
-          Alert.alert('완료', '카카오 연동이 해제되었습니다.', [
-            {
-              text: '확인',
-              onPress: () => {
-                logout();
-                navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-              },
-            },
-          ]);
-        } catch {
-          Alert.alert('오류', '연동 해제에 실패했습니다.');
-        }
-      },
-    },
-  ]);
-};
+  const fullAddress = [profile.address, profile.addressDetail].filter(Boolean).join(' ');
 
-  /* ---------- UI ---------- */
   return (
-    <LinearGradient colors={['#d0eaff', '#89c4f4']} style={styles.wrapper}>
-      <ScrollView
-        contentContainerStyle={[styles.container, { paddingBottom: 100 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.title}>유저 설정</Text>
+    <AppScreen padded={false} scroll footer={<CustomerBottomNav active="Settings" />} keyboardAware>
+      <AppHeader title="내 정보" showBrand />
+      <View style={styles.content}>
+        <PageIntro
+          title={`${profile.name ?? '고객'}님`}
+          description="예약에 사용할 연락처와 방문 주소를 관리하세요."
+        />
 
-        {/* ---------- editable rows ---------- */}
-        <View style={styles.rowGroup}>
-          {/* Name */}
-          <EditableRow
-            icon={require('./asset/icons/user.png')}
-            label="이름"
-            value={userInfo.name}
-            field="name"
-            editField={editField}
-            setEditField={setEditField}
-            editValue={editValue}
-            setEditValue={setEditValue}
-            onSave={saveField}
-          />
-
-          {/* Phone */}
-          <EditableRow
-            icon={require('./asset/icons/phone-icon.png')}
-            label="연락처"
-            value={userInfo.phone || '미등록'}
-            field="phone"
-            keyboardType="phone-pad"
-            editField={editField}
-            setEditField={setEditField}
-            editValue={editValue}
-            setEditValue={setEditValue}
-            onSave={saveField}
-          />
-
-          {/* Password */}
-          { userInfo.provider === 'standard' && (
-            <EditableRow
-              icon={require('./asset/icons/password.png')}
-              label="비밀번호"
-              value="••••••••"
-              field="password"
-              secure
-              editField={editField}
-              setEditField={setEditField}
-              editValue={editValue}
-              setEditValue={setEditValue}
-              onSave={saveField}
-            />
-          )}
-
-          {/* Address */}
-          <View style={styles.row}>
-            <Image source={require('./asset/icons/home.png')} style={styles.icon} />
-            <Text style={styles.label}>주소: {userInfo.address || '미등록'}</Text>
-            <TouchableOpacity
-              style={styles.changeBtn}
-              onPress={() =>
-                navigation.navigate('AddressSearchScreen', {
-                onSelect: async addr => {
-                  try {
-                      const url =
-                        userInfo.provider === 'guest'
-                        ? `/api/guests/${guestId}`
-                            : '/api/users/me';
-                          const { data } = await axios.patch(
-                              url,
-                              { address: addr },
-                          {
-                            baseURL: `${SERVER_URL}`,
-                              headers:
-                                userInfo.provider === 'guest'
-                                  ? undefined
-                                : { Authorization: `Bearer ${token}` },
-                            },
-                        );
-                  setUserInfo(cur => ({ ...cur, address: data.address }));
-                    } catch {
-                   Alert.alert('오류', '주소 저장 실패');
-                    }
-                  },
-                })
-              }
+        {error ? (
+          <View style={styles.errorBanner} accessibilityRole="alert">
+            <Ionicons name="warning-outline" size={19} color={colors.danger} />
+            <Text style={styles.errorText}>{error}</Text>
+            <Pressable
+              onPress={() => setError(null)}
+              accessibilityRole="button"
+              accessibilityLabel="오류 메시지 닫기"
+              hitSlop={8}
             >
-              <Text style={styles.changeText}>변경</Text>
-            </TouchableOpacity>
+              <Ionicons name="close" size={20} color={colors.danger} />
+            </Pressable>
           </View>
+        ) : null}
 
-          {/* Logout */}
-          { userInfo.provider !== 'guest' && (
-          <SimpleRow
-            icon={require('./asset/icons/logout.png')}
-            label="로그아웃"
-            actionLabel="로그아웃"
-            onPress={async () => {
-              await logout();
-              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-            }}
+        <SectionTitle>기본 정보</SectionTitle>
+        <Card style={styles.sectionCard}>
+          <SettingRow
+            icon="person-outline"
+            label="이름"
+            value={profile.name ?? '미등록'}
+            actionLabel="변경"
+            onPress={() => startEditing('name')}
           />
-        )}
+          {editing === 'name' ? (
+            <EditPanel
+              label="이름"
+              value={editValue}
+              onChange={setEditValue}
+              error={fieldError}
+              saving={savingField}
+              onCancel={cancelEditing}
+              onSave={() => void saveField()}
+            />
+          ) : null}
 
-          {/* Delete */}
-          <SimpleRow
-            icon={require('./asset/icons/delete-user.png')}
-            label={userInfo.provider === 'kakao' ? '카카오 연동 해제' : '회원 탈퇴'}
-            actionLabel={userInfo.provider === 'kakao' ? '연동 해제' : '삭제'}
-            actionColor="#d32f2f"
-            onPress={userInfo.provider === 'kakao'? handleUnlinkAndDeleteKakao: handleDeleteAccount}
+          <SettingRow
+            icon="call-outline"
+            label="연락처"
+            value={displayPhone(profile.phone)}
+            actionLabel="변경"
+            onPress={() => startEditing('phone')}
           />
-        </View>
+          {editing === 'phone' ? (
+            <EditPanel
+              label="연락처"
+              value={editValue}
+              onChange={setEditValue}
+              error={fieldError}
+              saving={savingField}
+              keyboardType="phone-pad"
+              onCancel={cancelEditing}
+              onSave={() => void saveField()}
+            />
+          ) : null}
 
-        <View style={styles.contactBox}>
-          <Text style={styles.contactLabel}>스마트홈케어 고객센터</Text>
-          <Text style={styles.contactNumber}>1588-5678</Text>
-        </View>
-      </ScrollView>
-
-      {/* footer */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.footerItem}
-          onPress={() => navigation.navigate('History')}
-        >
-          <Image source={require('./asset/icons/history.png')} style={styles.footerIcon} />
-          <Text style={styles.footerText}>예약내역</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.footerItem}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Image source={require('./asset/icons/home.png')} style={styles.footerIcon} />
-          <Text style={styles.footerText}>홈</Text>
-        </TouchableOpacity>
-
-        <View style={[styles.footerItem, styles.activeTab]}>
-          <Image
-            source={require('./asset/icons/user.png')}
-            style={[styles.footerIcon, styles.activeIcon]}
+          <SettingRow
+            icon="location-outline"
+            label="방문 주소"
+            value={fullAddress || '미등록'}
+            actionLabel={savingAddress ? '저장 중' : '변경'}
+            disabled={savingAddress}
+            onPress={() => navigation.navigate('AddressSearchScreen', { returnTo: 'Settings' })}
           />
-          <Text style={[styles.footerText, styles.activeText]}>유저 설정</Text>
+        </Card>
+
+        <SectionTitle style={styles.sectionTitle}>계정</SectionTitle>
+        <Card style={styles.sectionCard}>
+          <SettingRow
+            icon="key-outline"
+            label="로그인 방식"
+            value={providerLabel(profile.provider)}
+          />
+          {profile.email ? (
+            <SettingRow icon="mail-outline" label="이메일" value={profile.email} />
+          ) : null}
+        </Card>
+
+        <View style={styles.accountActions}>
+          <Button
+            label={profile.isGuest ? '비회원 세션 종료' : '로그아웃'}
+            icon="log-out-outline"
+            variant="ghost"
+            loading={accountAction === 'logout'}
+            disabled={accountAction !== null}
+            onPress={() => void handleLogout()}
+          />
+          <Button
+            label="계정 삭제 준비 중"
+            icon="lock-closed-outline"
+            variant="secondary"
+            disabled
+            onPress={() => undefined}
+          />
+          <Text style={styles.deleteHelp}>
+            현재 앱에서는 계정 삭제를 제공하지 않습니다. 예약 및 운영 기록을 함께 처리하는
+            서버 측 트랜잭션 삭제·익명화 절차가 준비된 뒤 활성화됩니다.
+          </Text>
         </View>
       </View>
-    </LinearGradient>
+    </AppScreen>
   );
 }
 
-/* ---------- helper sub-components ---------- */
-type Field = 'name' | 'phone' | 'password';
-
-const EditableRow = ({
+function SettingRow({
   icon,
   label,
   value,
-  field,
-  keyboardType,
-  secure,
-  editField,
-  setEditField,
-  editValue,
-  setEditValue,
-  onSave,
+  actionLabel,
+  onPress,
+  disabled = false,
 }: {
-  icon: any;
+  icon: IconName;
   label: string;
   value: string;
-  field: Field;
-  keyboardType?: 'default' | 'phone-pad';
-  secure?: boolean;
-  editField: Field | null;
-  setEditField: React.Dispatch<React.SetStateAction<Field | null>>;
-  editValue: string;
-  setEditValue: React.Dispatch<React.SetStateAction<string>>;
-  onSave: (f: Field, v: string) => void;
-}) => (
-  <View style={styles.row}>
-    <Image source={icon} style={styles.icon} />
-    {editField === field ? (
-      <TextInput
-        value={editValue}
-        onChangeText={setEditValue}
-        secureTextEntry={secure}
-        keyboardType={keyboardType}
-        placeholder={field === 'password' ? '새 비밀번호 입력' : undefined}
-        style={[styles.label, { borderBottomWidth: 1, borderColor: '#ccc', paddingBottom: 2 }]}
-      />
-    ) : (
-      <Text style={styles.label}>
-        {label}: {value}
-      </Text>
-    )}
-    <TouchableOpacity
-      style={styles.changeBtn}
-      onPress={() => {
-        if (editField === field) {
-          if (field === 'password' && editValue.length < 6) {
-            Alert.alert('오류', '비밀번호는 최소 6자리여야 합니다.');
-            return;
-          }
-          onSave(field, editValue);
-        } else {
-          setEditField(field);
-          setEditValue(value);
-        }
-      }}
+  actionLabel?: string;
+  onPress?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress || disabled}
+      accessibilityRole={onPress ? 'button' : 'text'}
+      accessibilityLabel={`${label}, ${value}${actionLabel ? `, ${actionLabel}` : ''}`}
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [
+        styles.settingRow,
+        pressed && onPress && styles.rowPressed,
+        disabled && styles.rowDisabled,
+      ]}
     >
-      <Text style={styles.changeText}>{editField === field ? '저장' : '변경'}</Text>
-    </TouchableOpacity>
-  </View>
-);
+      <View style={styles.rowIcon}>
+        <Ionicons name={icon} size={20} color={colors.primary} />
+      </View>
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.rowValue} numberOfLines={2}>{value}</Text>
+      </View>
+      {actionLabel ? (
+        <View style={styles.rowAction}>
+          <Text style={styles.rowActionText}>{actionLabel}</Text>
+          <Ionicons name="chevron-forward" size={17} color={colors.primary} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
 
-const SimpleRow = ({
-  icon,
+function EditPanel({
   label,
-  actionLabel,
-  actionColor = '#007BFF',
-  onPress,
+  value,
+  onChange,
+  error,
+  saving,
+  keyboardType = 'default',
+  onCancel,
+  onSave,
 }: {
-  icon: any;
   label: string;
-  actionLabel: string;
-  actionColor?: string;
-  onPress: () => void;
-}) => (
-  <View style={styles.row}>
-    <Image source={icon} style={styles.icon} />
-    <Text style={styles.label}>{label}</Text>
-    <TouchableOpacity style={styles.changeBtn} onPress={onPress}>
-      <Text style={[styles.changeText, { color: actionColor }]}>{actionLabel}</Text>
-    </TouchableOpacity>
-  </View>
-);
+  value: string;
+  onChange: (value: string) => void;
+  error: string | null;
+  saving: boolean;
+  keyboardType?: 'default' | 'phone-pad';
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <View style={styles.editPanel}>
+      <FormField
+        label={`${label} 수정`}
+        value={value}
+        onChangeText={onChange}
+        error={error ?? undefined}
+        keyboardType={keyboardType}
+        autoCapitalize="none"
+        returnKeyType="done"
+        onSubmitEditing={onSave}
+      />
+      <View style={styles.editActions}>
+        <Button label="취소" variant="ghost" fullWidth={false} disabled={saving} onPress={onCancel} style={styles.editButton} />
+        <Button label="저장" fullWidth={false} loading={saving} onPress={onSave} style={styles.editButton} />
+      </View>
+    </View>
+  );
+}
+
+export default SettingsScreen;
 
 const styles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
-  container: {
-    paddingTop: 60,
-    paddingHorizontal: 24,
-  },
-  title: {
-    fontFamily: 'JalnanGothic',
-    fontSize: 28,
-    color: '#010198',
-    textAlign: 'center',
-    marginBottom: 40,
-  },
-
-  rowGroup: {
-    gap: 14,
-  },
-  row: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
+  errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSoft,
   },
-  icon: {
-    width: 24,
-    height: 24,
-    tintColor: '#007BFF',
-    marginRight: 12,
-  },
-  label: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 16,
+  errorText: {
     flex: 1,
-    color: '#333',
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.danger,
   },
-  changeBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: '#e3f0ff',
-    borderRadius: 8,
+  sectionTitle: {
+    marginTop: spacing.xl,
   },
-  changeText: {
-    fontFamily: 'Pretendard-Bold',
-    color: '#007BFF',
-    fontSize: 14,
+  sectionCard: {
+    paddingVertical: spacing.xxs,
+    paddingHorizontal: spacing.md,
   },
-  contactBox: {
-    marginTop: 25,
-    alignItems: 'center',
-  },
-  contactLabel: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 14,
-    color: '#333',
-  },
-  contactNumber: {
-    fontFamily: 'Pretendard-Bold',
-    fontSize: 20,
-    color: '#010198',
-    marginTop: 6,
-  },
-  footer: {
+  settingRow: {
+    minHeight: 72,
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    borderTopWidth: 1,
-    borderColor: '#dbe9f9',
-    backgroundColor: '#ffffff',
-    paddingVertical: 10,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  footerItem: {
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderSoft,
   },
-  footerIcon: {
-    width: 24,
-    height: 24,
-    tintColor: '#90a4ae',
-    marginBottom: 4,
+  rowPressed: {
+    opacity: 0.65,
   },
-  footerText: {
+  rowDisabled: {
+    opacity: 0.55,
+  },
+  rowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+  },
+  rowCopy: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    marginRight: spacing.xs,
+  },
+  rowLabel: {
+    fontFamily: fonts.medium,
     fontSize: 12,
-    fontFamily: 'Pretendard-Regular',
-    color: '#90a4ae',
+    lineHeight: 17,
+    color: colors.textMuted,
   },
-  activeTab: {
-    backgroundColor: '#d0eaff',
+  rowValue: {
+    marginTop: 2,
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.text,
   },
-  activeIcon: {
-    tintColor: '#007BFF',
+  rowAction: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingLeft: spacing.xs,
   },
-  activeText: {
-    color: '#007BFF',
-    fontFamily: 'Pretendard-Bold',
+  rowActionText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  editPanel: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderSoft,
+  },
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
+  },
+  editButton: {
+    minWidth: 92,
+  },
+  accountActions: {
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  deleteHelp: {
+    paddingHorizontal: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    color: colors.textMuted,
   },
 });

@@ -1,294 +1,360 @@
-import React, { useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import React, { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
 import {
-  View, Text, StyleSheet, ActivityIndicator,
-  TextInput, Image, TouchableOpacity,
-  Alert, ScrollView, Platform
-} from 'react-native';
-import * as AppleAuthentication from 'expo-apple-authentication';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as KakaoLogins from '@react-native-seoul/kakao-login';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
+  AppScreen,
+  Brand,
+  Button,
+  Card,
+  FormField,
+} from '../components';
+import { customerSafeErrorMessage } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import type { RootStackParamList } from '../navigation/AppNavigator';
+import { colors, fonts, radius, spacing } from '../theme/tokens';
 
+type LoginNavigation = NativeStackNavigationProp<RootStackParamList, 'Login'>;
+type LoginRoute = RouteProp<RootStackParamList, 'Login'>;
 
-const introLogo = require('./asset/icons/intro-logo.png');
-const kakaoIcon  = require('./asset/icons/kakao-icon.png');
+function toMessage(error: unknown): string {
+  return customerSafeErrorMessage(
+    error,
+    '로그인하지 못했습니다. 이메일과 비밀번호를 확인해 주세요.',
+  );
+}
 
 export default function LoginScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { loginEmail, loginKakao, loginApple, token, isLoading, currentUser } = useAuth();
-
+  const navigation = useNavigation<LoginNavigation>();
+  const route = useRoute<LoginRoute>();
+  const { loginEmail, configurationError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  /* --- post-login redirect --- */
-  useEffect(() => {
-    if (token && currentUser) {
-      setTimeout(() => {
-        if (currentUser.isAdmin) {
-          navigation.reset({ index: 0, routes: [{ name: 'AdminDashboard' }] });
-        } else {
-          navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-        }
-      }, 100);
+  const emailError = useMemo(() => {
+    if (!email || /^\S+@\S+\.\S+$/.test(email.trim())) return undefined;
+    return '이메일 형식을 확인해 주세요.';
+  }, [email]);
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password || emailError) {
+      setError('이메일과 비밀번호를 정확히 입력해 주세요.');
+      return;
     }
-      if (!KakaoLogins || typeof KakaoLogins.login !== 'function') {
-    alert('Kakao module is not linked. 😡');
-  }
-  }, [token, currentUser]);
 
-  /* --- email login handler --- */
-  const handleEmailLogin = () => loginEmail(email, password);
-
-
-/* -- native Kakao login + scopes + debug logging -- */
-const handleKakaoNativeLogin = async () => {
-  try {
-    /* 1️⃣ sign-in (+ scopes) */
-    const loginRes = await (KakaoLogins as any).loginWithKakaoAccount({
-      scopes: ['profile_nickname', 'phone_number', 'shipping_address'],
-    });
-    let { accessToken } = loginRes;
-
-    /* 2️⃣ read the address list (may be empty) */
-    let bestAddr: { baseAddress?: string; detailAddress?: string } | null = null;
+    setPending(true);
+    setError(null);
     try {
-      const ship = await (KakaoLogins as any).shippingAddresses();
-
-      const list = ship?.shippingAddresses ?? [];
-      const picked = list.find((a: any) => a.isDefault) ?? list[0];
-      if (picked?.baseAddress) {
-        bestAddr = {
-          baseAddress:  picked.baseAddress,
-          detailAddress: picked.detailAddress ?? '',
-        };
-      }
-    } catch (e) {
+      await loginEmail(email, password);
+    } catch (caught) {
+      setError(toMessage(caught));
+    } finally {
+      setPending(false);
     }
+  };
 
-    /* 3️⃣ send BOTH token + address */
-   await loginKakao(accessToken, bestAddr);
-  } catch (err) {
-    console.error('Kakao native login error:', err);
-    Alert.alert('로그인 실패', '카카오 로그인 중 오류가 발생했습니다.');
-  }
-};
+  return (
+    <AppScreen scroll keyboardAware contentStyle={styles.screen}>
+      <Brand />
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-
-
-
-return (
-  <LinearGradient colors={['#d0eaff', '#89c4f4']} style={styles.container}>
-    <ScrollView
-      contentContainerStyle={{ paddingBottom: 32 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Image source={introLogo} style={styles.logo} />
-      <Text style={styles.title}>SMART HOMECARE</Text>
-      <Text style={styles.subTitle}>스마트홈케어</Text>
-
-      <TextInput
-        placeholder="이메일"
-        value={email}
-        onChangeText={setEmail}
-        style={styles.input}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-      <TextInput
-        placeholder="패스워드"
-        value={password}
-        onChangeText={setPassword}
-        style={styles.input}
-        secureTextEntry
-      />
-
-      <TouchableOpacity style={styles.loginButton} onPress={handleEmailLogin}>
-        <Text style={styles.loginText}>로그인</Text>
-      </TouchableOpacity>
-
-        <TouchableOpacity style={styles.kakaoButton} onPress={handleKakaoNativeLogin}>
-          <Image source={kakaoIcon} style={styles.kakaoIcon} />
-          <Text style={styles.kakaoText}>카카오로 로그인</Text>
-        </TouchableOpacity>
-    
-
-      {Platform.OS === 'ios' && (
-  <AppleAuthentication.AppleAuthenticationButton
-    buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-    buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-    cornerRadius={8}
-    style={{ width: '100%', height: 44, marginTop: 12 }}
-    onPress={async () => {
-      try {
-        const credential = await AppleAuthentication.signInAsync({
-          requestedScopes: [
-            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-            AppleAuthentication.AppleAuthenticationScope.EMAIL,
-          ],
-        });
-
-        // 🔗 Call real login handler from AuthContext
-        await loginApple({
-          identityToken: credential.identityToken!,
-          authorizationCode: credential.authorizationCode!,
-        });
-
-      } catch (e: any) {
-        if (e.code === 'ERR_CANCELED') {
-          console.log('Apple login canceled by user');
-        } else {
-          console.error('Apple login failed:', e);
-          Alert.alert('Apple 로그인 실패', e.message ?? '다시 시도해주세요.');
-        }
-      }
-    }}
-  />
-)}
-
-
-      <Text style={styles.or}>또는</Text>
-
-      <TouchableOpacity
-        style={styles.registerButton}
-        onPress={() => navigation.navigate('Register')}
-      >
-        <Text style={styles.registerText}>
-          아직 계정이 없으신가요? <Text style={styles.strongText}>회원가입</Text>
+      <View style={styles.hero}>
+        <View style={styles.eyebrowRow}>
+          <View style={styles.eyebrowIcon}>
+            <Ionicons name="sparkles-outline" size={15} color={colors.primary} />
+          </View>
+          <Text style={styles.eyebrow}>SMART HOMECARE 2.0</Text>
+        </View>
+        <Text style={styles.title}>집 관리가{`\n`}더 단순해집니다</Text>
+        <Text style={styles.description}>
+          필요한 서비스를 고르고, 가능한 시간을 예약하고, 진행 상태를 한곳에서 확인하세요.
         </Text>
-      </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity
-        style={styles.guestCTA}
-        onPress={() => navigation.navigate('Register', { isGuest: true })}
-      >
-        <Text style={styles.guestCTAText}>비회원으로 예약하기</Text>
-        <Text style={styles.guestSubText}>로그인 없이 예약이 가능합니다</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  </LinearGradient>
-);
+      {configurationError ? (
+        <Card style={styles.previewCard}>
+          <View style={styles.noticeRow}>
+            <Ionicons name="construct-outline" size={20} color={colors.primary} />
+            <View style={styles.noticeCopy}>
+              <Text style={styles.noticeTitle}>디자인 미리보기 모드</Text>
+              <Text style={styles.noticeText}>
+                API 주소를 연결하면 로그인과 예약 데이터가 활성화됩니다.
+              </Text>
+            </View>
+          </View>
+          <Button
+            label="디자인 데모 화면 보기"
+            variant="secondary"
+            icon="eye-outline"
+            onPress={() => navigation.navigate('Home')}
+            style={styles.noticeButton}
+          />
+        </Card>
+      ) : null}
+
+      {route.params?.notice ? (
+        <Card style={styles.previewCard}>
+          <View style={styles.noticeRow} accessibilityRole="alert">
+            <Ionicons name="mail-unread-outline" size={20} color={colors.primary} />
+            <View style={styles.noticeCopy}>
+              <Text style={styles.noticeTitle}>이메일 확인이 필요합니다</Text>
+              <Text style={styles.noticeText}>{route.params.notice}</Text>
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
+      <Card elevated style={styles.loginCard}>
+        <Text style={styles.cardTitle}>로그인</Text>
+        <Text style={styles.cardDescription}>예약 내역과 등록 정보를 안전하게 불러옵니다.</Text>
+
+        <FormField
+          label="이메일"
+          value={email}
+          onChangeText={value => {
+            setEmail(value);
+            setError(null);
+          }}
+          placeholder="name@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="username"
+          returnKeyType="next"
+          error={emailError}
+        />
+        <FormField
+          label="비밀번호"
+          value={password}
+          onChangeText={value => {
+            setPassword(value);
+            setError(null);
+          }}
+          placeholder="비밀번호 입력"
+          secureTextEntry
+          autoCapitalize="none"
+          autoComplete="current-password"
+          textContentType="password"
+          returnKeyType="done"
+          onSubmitEditing={() => void handleLogin()}
+        />
+
+        {error ? (
+          <View style={styles.errorBox} accessibilityRole="alert">
+            <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
+        <Button
+          label="로그인"
+          onPress={() => void handleLogin()}
+          loading={pending}
+          disabled={Boolean(emailError)}
+        />
+
+        <View style={styles.registerRow}>
+          <Text style={styles.registerPrompt}>처음 이용하시나요?</Text>
+          <Pressable
+            onPress={() => navigation.navigate('Register')}
+            accessibilityRole="button"
+            accessibilityLabel="회원가입"
+            hitSlop={8}
+          >
+            <Text style={styles.registerLink}>회원가입</Text>
+          </Pressable>
+        </View>
+      </Card>
+
+      <Card style={styles.guestAction}>
+        <View style={styles.guestIcon}>
+          <Ionicons name="phone-portrait-outline" size={20} color={colors.textMuted} />
+        </View>
+        <View style={styles.guestCopy}>
+          <Text style={styles.guestTitle}>비회원 접수 준비 중</Text>
+          <Text style={styles.guestDescription}>
+            휴대전화 본인 인증과 서버 검증을 연결한 뒤 제공됩니다.
+          </Text>
+        </View>
+        <Ionicons name="lock-closed-outline" size={19} color={colors.textMuted} />
+      </Card>
+
+      <Text style={styles.socialNote}>
+        카카오 · Apple · Google 로그인은 V2 인증 연결 후 활성화됩니다.
+      </Text>
+    </AppScreen>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 24,
+  screen: {
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  hero: {
+    marginTop: spacing.xxl,
+    marginBottom: spacing.xl,
   },
-  logo: {
-    width: 120,
-    height: 120,
-    resizeMode: 'contain',
-    alignSelf: 'center',
-    marginBottom: 10,
-  },
-  title: {
-    fontFamily: 'JalnanGothic',
-    fontSize: 32,
-    textAlign: 'center',
-    color: '#010198',
-  },
-  subTitle: {
-    fontFamily: 'Pretendard-SemiBold',
-    fontSize: 17,
-    color: '#040498',
-    textAlign: 'center',
-    marginBottom: 24,
-    marginTop: 2,
-  },
-  input: {
-    fontFamily: 'Pretendard-Regular',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    padding: 14,
-    marginBottom: 12,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-  },
-  or: {
-    fontFamily: 'Pretendard-Medium',
-    textAlign: 'center',
-    marginVertical: 16,
-    color: '#666',
-  },
-  registerButton: {
-    marginBottom: 16,
-    marginTop: 12,
-    alignSelf: 'center',
-  },
-  registerText: {
-    fontFamily: 'Pretendard-Regular',
-    color: '#555',
-    fontSize: 14,
-  },
-  strongText: {
-    fontFamily: 'Pretendard-Bold',
-    color: '#007BFF',
-  },
-  loginButton: {
-    backgroundColor: '#007BFF',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  loginText: {
-    fontFamily: 'Pretendard-Bold',
-    color: '#fff',
-    fontSize: 16,
-  },
-  kakaoButton: {
+  eyebrowRow: {
     flexDirection: 'row',
-    backgroundColor: '#FEE500',
-    borderRadius: 12,
-    padding: 14,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
+    marginBottom: spacing.sm,
   },
-  kakaoIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 8,
-    resizeMode: 'contain',
-  },
-  kakaoText: {
-    fontFamily: 'Pretendard-Bold',
-    fontSize: 16,
-  },
-  guestCTA: {
-    backgroundColor: '#e8f0fe',
-    padding: 16,
+  eyebrowIcon: {
+    width: 28,
+    height: 28,
     borderRadius: 14,
     alignItems: 'center',
-    marginTop: 24,
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+    marginRight: spacing.xs,
   },
-  guestCTAText: {
-    fontFamily: 'Pretendard-Bold',
-    fontSize: 17,
-    color: '#174ea6',
+  eyebrow: {
+    fontFamily: fonts.semibold,
+    color: colors.primary,
+    fontSize: 12,
+    letterSpacing: 0.8,
   },
-  guestSubText: {
-    fontFamily: 'Pretendard-Regular',
+  title: {
+    fontFamily: fonts.bold,
+    color: colors.text,
+    fontSize: 34,
+    lineHeight: 42,
+    letterSpacing: -1,
+  },
+  description: {
+    marginTop: spacing.sm,
+    maxWidth: 480,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  previewCard: {
+    marginBottom: spacing.md,
+    backgroundColor: colors.primarySubtle,
+    borderColor: colors.primarySoft,
+  },
+  noticeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  noticeCopy: {
+    flex: 1,
+    marginLeft: spacing.sm,
+  },
+  noticeTitle: {
+    fontFamily: fonts.semibold,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  noticeText: {
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
     fontSize: 13,
-    color: '#5f6368',
-    marginTop: 4,
+    lineHeight: 19,
+  },
+  noticeButton: {
+    marginTop: spacing.md,
+  },
+  loginCard: {
+    padding: spacing.xl,
+  },
+  cardTitle: {
+    fontFamily: fonts.bold,
+    color: colors.text,
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  cardDescription: {
+    marginTop: spacing.xxs,
+    marginBottom: spacing.lg,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+    borderRadius: radius.sm,
+    backgroundColor: colors.dangerSoft,
+  },
+  errorText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    color: colors.danger,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  registerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  registerPrompt: {
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  registerLink: {
+    marginLeft: spacing.xs,
+    fontFamily: fonts.semibold,
+    color: colors.primary,
+    fontSize: 14,
+  },
+  guestAction: {
+    minHeight: 76,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+  guestIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+  },
+  guestCopy: {
+    flex: 1,
+    marginHorizontal: spacing.sm,
+  },
+  guestTitle: {
+    fontFamily: fonts.semibold,
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  guestDescription: {
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  socialNote: {
+    marginTop: spacing.lg,
+    textAlign: 'center',
+    fontFamily: fonts.regular,
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

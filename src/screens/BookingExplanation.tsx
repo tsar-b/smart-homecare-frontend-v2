@@ -1,537 +1,657 @@
-// FIXME: HARDCODED URL FOR IMAGE SOURCES TO BE REPLACED WITH DYNAMIC ONES FROM SERVER LATER
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  BackHandler,
-  TextInput,
-} from 'react-native';
-import {
-  useRoute,
-  useNavigation,
-  useFocusEffect,
-  RouteProp,
-} from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
+import type { RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { RootStackParamList, ServiceType, Subtype } from '../navigation/AppNavigator';
+import {
+  AppHeader,
+  AppScreen,
+  Button,
+  Card,
+  ChoiceChip,
+  FormField,
+  PageIntro,
+  ProgressSteps,
+  SectionTitle,
+} from '../components';
+import type {
+  RootStackParamList,
+  SelectedOption,
+} from '../navigation/AppNavigator';
+import { colors, fonts, radius, spacing } from '../theme/tokens';
 
-export interface Choice {
-  label: string;
-  value: string;
-  extraCost: number;
+type ExplanationRoute = RouteProp<RootStackParamList, 'BookingExplanation'>;
+type ExplanationNavigation = NativeStackNavigationProp<RootStackParamList>;
+
+const BOOKING_STEPS = ['가전 선택', '서비스 선택', '제품 종류', '상세 옵션', '일정 확인'];
+
+function formatPrice(value: number): string {
+  return value === -1 ? '상담 후 안내' : `${value.toLocaleString('ko-KR')}원`;
 }
 
-export interface Option {
-  _id: string;
-  key: string;
-  label: string;
-  choices: Choice[];
+function isRemoteImage(value: string | null | undefined): value is string {
+  return Boolean(value && /^https?:\/\//i.test(value));
 }
-
-/* --------- stack generics --------- */
-type ExpRoute = RouteProp<RootStackParamList, 'BookingExplanation'>;
-type ExpNav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function BookingExplanation() {
-  const route = useRoute<ExpRoute>();
-  const navigation = useNavigation<ExpNav>();
-  const { serviceType = {} as ServiceType, subtype = {} as Subtype } = route.params ?? {};
+  const route = useRoute<ExplanationRoute>();
+  const navigation = useNavigation<ExplanationNavigation>();
+  const { serviceType, subtype, isPreview = false } = route.params;
 
-  const [selectedTierKey, setSelectedTierKey] = useState<string>(
-    serviceType.tiers?.[0]?.tier ?? ''
-  );
+  const [selectedTierKey, setSelectedTierKey] = useState(serviceType.tiers[0]?.tier ?? '');
+  const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, SelectedOption>>({});
+  const [symptom, setSymptom] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [partImageFailed, setPartImageFailed] = useState(false);
+
   const currentTier = useMemo(
-    () => serviceType.tiers?.find(t => t.tier === selectedTierKey) ?? null,
-    [serviceType.tiers, selectedTierKey]
+    () => serviceType.tiers.find(item => item.tier === selectedTierKey) ?? null,
+    [selectedTierKey, serviceType.tiers],
   );
-  const [selectedPartId, setSelectedPartId] = useState<string | null | undefined>(null);
 
   useEffect(() => {
-    const firstPartId = currentTier?.assets.parts?.[0]?.partId ?? null;
-    setSelectedPartId(firstPartId);
+    const firstPart = currentTier?.assets?.parts?.[0];
+    setSelectedPartId(firstPart?.partId ?? firstPart?.url ?? null);
+    setPartImageFailed(false);
   }, [currentTier]);
 
   const selectedPart = useMemo(
-    () => currentTier?.assets.parts?.find(p => p.partId === selectedPartId) ?? null,
-    [currentTier, selectedPartId]
+    () =>
+      currentTier?.assets?.parts?.find(
+        part => (part.partId ?? part.url) === selectedPartId,
+      ) ?? null,
+    [currentTier, selectedPartId],
   );
 
-  interface SelectedOption {
-    _id: string;
-    key: string;
-    label: string;
-    selectedLabel: string;
-    selectedValue: string;
-    extraCost: number;
-  }
-
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, SelectedOption>>({});
-  const [symptom, setSymptom] = useState('');
-
-  const subKey = (subtype as any).name ?? '';
-
-  useFocusEffect(
-    useCallback(() => {
-      const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
-      return () => sub.remove();
-    }, [])
+  const requiredOptions = useMemo(
+    () => (serviceType.options ?? []).filter(option => option.choices.length > 0),
+    [serviceType.options],
   );
 
-  const handleBack = () => {
-    Alert.alert('경고', '서비스 선택부터 다시 시작해야 합니다.', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '돌아가기',
-        style: 'destructive',
-        onPress: () =>
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'BookingServiceSelection' }],
-          }),
-      },
-    ]);
-  };
+  const estimate = useMemo(() => {
+    if (isPreview || !currentTier || currentTier.price === -1) return null;
+    return (
+      currentTier.price +
+      Object.values(selectedOptions).reduce((sum, item) => sum + item.extraCost, 0)
+    );
+  }, [currentTier, isPreview, selectedOptions]);
+
+  const blueprintValue = currentTier?.assets?.blueprint ?? null;
 
   const handleConfirm = () => {
     if (!currentTier) {
-      Alert.alert('오류', '티어를 선택해 주세요.');
+      setValidationError('이용 가능한 요금제가 없습니다. 이전 단계에서 다른 서비스를 선택해 주세요.');
       return;
     }
 
-    if ((serviceType.options ?? []).some(opt => !selectedOptions[opt.key])) {
-      Alert.alert('옵션 선택 필요', '모든 옵션을 선택해 주세요.');
+    const missing = requiredOptions.find(option => !selectedOptions[option.key]);
+    if (missing) {
+      setValidationError(`‘${missing.label}’ 옵션을 선택해 주세요.`);
       return;
     }
 
-    const optionPayload = (serviceType.options ?? []).map(opt => {
-      const sel = selectedOptions[opt.key];
-      return (
-        sel ?? {
-          _id: opt._id,
-          key: opt.key,
-          label: opt.label,
-          selectedLabel: opt.choices[0].label,
-          selectedValue: opt.choices[0].value,
-          extraCost: opt.choices[0].extraCost,
-        }
-      );
-    });
-
+    setValidationError(null);
     navigation.navigate('Confirm', {
       serviceType,
       subtype,
       tier: currentTier,
-      selectedOptions: optionPayload,
-      ...(serviceType.name === 'fix' && { symptom }),
+      selectedOptions: requiredOptions.map(option => selectedOptions[option.key]),
+      symptom: serviceType.name === 'fix' ? symptom.trim() : undefined,
+      ...(isPreview ? { isPreview: true } : {}),
     });
   };
 
-  const blueprintMap: Record<string, any> = {
-    'bpbyukgulyee - standard.png': require('../assets/acpic/bpbyukgulyee - standard.png'),
-    'bpbyukgulyee - deluxe.png': require('../assets/acpic/bpbyukgulyee - deluxe.png'),
-    'bpbyukgulyee - premium.png': require('../assets/acpic/bpbyukgulyee - premium.png'),
-    'bpstandairconditioner.png': require('../assets/acpic/bpstandairconditioner.png'),
-    'bpstandairconditioner - standard.png': require('../assets/acpic/bpstandairconditioner - standard.png'),
-    'bpstandairconditioner - deluxe.png': require('../assets/acpic/bpstandairconditioner - deluxe.png'),
-    'bpstandairconditioner - premium.png': require('../assets/acpic/bpstandairconditioner - premium.png'),
-    'bp2in1 - standard.png': require('../assets/acpic/bp2in1 - standard.png'),
-    'bp2in1 - deluxe & premium.png': require('../assets/acpic/bp2in1 - deluxe & premium.png'),
-    'bp1way - standard.png': require('../assets/acpic/bp1way - standard.png'),
-    'bp1way - deluxe.png': require('../assets/acpic/bp1way - deluxe.png'),
-    'bp1way - premium.png': require('../assets/acpic/bp1way - premium.png'),
-    '4way - standard.png': require('../assets/acpic/4way - standard.png'),
-    '4way - deluxe.png': require('../assets/acpic/4way - deluxe.png'),
-    '4way - premium.png': require('../assets/acpic/4way - premium.png'),
-    'bpshilwaegi - standard & deluxe.png': require('../assets/acpic/bpshilwaegi - standard & deluxe.png'),
-    'bpshilwaegi - 2dan.png': require('../assets/acpic/bpshilwaegi - 2dan.png'),
-  };
-
-  const blueprintKey = useMemo(() => {
-    if (!currentTier) return null;
-    return currentTier.assets?.blueprint ?? null;
-  }, [currentTier]);
-
   return (
-    <LinearGradient colors={['#d0eaff', '#89c4f4']} style={styles.wrapper}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-          <Image source={require('./asset/icons/back-button.png')} style={styles.backIcon} />
-        </TouchableOpacity>
+    <AppScreen scroll padded={false}>
+      <AppHeader title="서비스 상세" onBack={() => navigation.goBack()} />
+      <View style={styles.content}>
+        <ProgressSteps steps={BOOKING_STEPS} current={3} />
+        <PageIntro
+          title={`${subtype.name} ${serviceType.label}`}
+          description={
+            isPreview
+              ? '상세 화면 구성을 확인하세요. 등급, 금액, 작업 범위는 실제 운영 데이터가 아닙니다.'
+              : '관리 범위와 선택 옵션을 확인하세요. 금액은 접수 시 서버에서 다시 계산됩니다.'
+          }
+        />
 
-        <Text style={styles.title}>{serviceType.label ?? '서비스'} 안내</Text>
-        <Text style={styles.subTitle}>세부 옵션 및 세척 부위를 확인하세요</Text>
-
-        {/* Tier selection */}
-        <View style={styles.tierList}>
-          {(serviceType.tiers ?? []).map(tier => {
-            const active = selectedTierKey === tier.tier;
-            return (
-              <TouchableOpacity
-                key={tier.tier}
-                style={[styles.tierButton, active && styles.tierActive]}
-                onPress={() => setSelectedTierKey(tier.tier)}
-              >
-                <Text style={[styles.tierLabel, active && styles.tierLabelSelected]}>
-                  {tier.tier.toUpperCase()}
-                </Text>
-                <Text style={[styles.tierPrice, active && styles.tierPriceSelected]}>
-                  {tier.price === -1 ? '가격문의' : `₩${tier.price.toLocaleString()}`}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {currentTier?.memo ? (
-          <Text style={styles.tierMemo}>※ {currentTier.memo}</Text>
+        {isPreview ? (
+          <View style={styles.previewNotice} accessibilityRole="summary">
+            <Ionicons name="eye-outline" size={20} color={colors.primary} />
+            <View style={styles.previewCopy}>
+              <Text style={styles.previewTitle}>디자인 미리보기 · 상담 견적만 표시</Text>
+              <Text style={styles.previewText}>
+                API가 연결되지 않아 실제 가격, 도면, 옵션을 표시하지 않습니다. 다음 일정 화면도
+                확인할 수 있지만 예약은 접수되지 않습니다.
+              </Text>
+            </View>
+          </View>
         ) : null}
 
-        {/* Blueprint */}
-        {blueprintKey && blueprintMap[blueprintKey] && (
-          <>
-            <Text style={styles.title}>설계도</Text>
-            <View style={styles.blueprintContainer}>
-              <Image source={blueprintMap[blueprintKey]} style={styles.blueprint} />
-            </View>
-          </>
-        )}
-
-        {/* Part buttons */}
-        {currentTier?.assets.parts?.length ? (
-          <View style={styles.partList}>
-            {currentTier.assets.parts.map(part => {
-              const active = selectedPartId === part.partId;
+        <SectionTitle>서비스 등급</SectionTitle>
+        {serviceType.tiers.length > 0 ? (
+          <View style={styles.tierGrid} accessibilityRole="radiogroup">
+            {serviceType.tiers.map(item => {
+              const active = item.tier === selectedTierKey;
               return (
-                <TouchableOpacity
-                  key={part.partId}
-                  style={[styles.partButton, active && styles.partActive]}
-                  onPress={() => setSelectedPartId(part.partId ?? null)}
+                <Pressable
+                  key={item.id ?? item._id ?? item.tier}
+                  onPress={() => {
+                    setSelectedTierKey(item.tier);
+                    setValidationError(null);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${item.tier}, ${formatPrice(isPreview ? -1 : item.price)}`}
+                  accessibilityState={{ checked: active }}
+                  style={({ pressed }) => [
+                    styles.tierCard,
+                    active && styles.tierCardActive,
+                    pressed && styles.pressed,
+                  ]}
                 >
-                  <Text style={[styles.partLabel, active && styles.partLabelActive]}>
-                    {part.label}
+                  <View style={[styles.tierIcon, active && styles.tierIconActive]}>
+                    <Ionicons
+                      name={active ? 'checkmark' : 'layers-outline'}
+                      size={18}
+                      color={active ? colors.white : colors.primary}
+                    />
+                  </View>
+                  <Text style={[styles.tierName, active && styles.tierNameActive]}>
+                    {item.tier.toUpperCase()}
                   </Text>
-                </TouchableOpacity>
+                  <Text style={[styles.tierPrice, active && styles.tierPriceActive]}>
+                    {formatPrice(isPreview ? -1 : item.price)}
+                  </Text>
+                </Pressable>
               );
             })}
           </View>
-        ) : null}
-
-        {selectedPart && (
-          <View style={styles.previewBox}>
-            <Image source={{ uri: selectedPart.url }} style={styles.previewImage} />
-            <Text style={styles.previewText}>실제 {selectedPart.label} 세척 모습입니다.</Text>
-          </View>
+        ) : (
+          <Card style={styles.emptyCard}>
+            <Ionicons name="information-circle-outline" size={22} color={colors.warning} />
+            <Text style={styles.emptyText}>등록된 서비스 등급이 없습니다.</Text>
+          </Card>
         )}
 
-        {/* Options */}
-        {serviceType.options?.length ? (
-          <View style={styles.optionsBox}>
-            <Text style={styles.subTitle}>선택 가능한 옵션</Text>
-            {serviceType.options.map(opt => (
-              <View key={opt._id} style={styles.optionGroup}>
-                <Text style={styles.optionLabel}>{opt.label}</Text>
-                {opt.choices.map(choice => {
-                  const isSel = selectedOptions[opt.key]?.selectedValue === choice.value;
-                  return (
-                    <TouchableOpacity
-                      key={choice.value}
-                      style={[styles.optionChoiceButton, isSel && styles.optionChoiceSelected]}
-                      onPress={() =>
-                        setSelectedOptions(prev => ({
-                          ...prev,
-                          [opt.key]: {
-                            _id: opt._id,
-                            key: opt.key,
-                            label: opt.label,
-                            selectedLabel: choice.label,
-                            selectedValue: choice.value,
-                            extraCost: choice.extraCost,
-                          },
-                        }))
-                      }
-                    >
-                      <Text style={[styles.optionChoiceText, isSel && styles.optionChoiceTextSelected]}>
-                        ▸ {choice.label} (+₩{choice.extraCost.toLocaleString('ko-KR')})
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ))}
+        {currentTier?.memo ? (
+          <View style={styles.memo}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.warning} />
+            <Text style={styles.memoText}>{currentTier.memo}</Text>
           </View>
-
         ) : null}
 
-        {/* Symptom for A/S only */}
-         {serviceType.name === 'fix' && (
-        <Text style={styles.title}>증상을 입력해주세요</Text>
-          )}
-        {serviceType.name === 'fix' && (
-          <View style={styles.symptomBox}>
-              <TextInput
-                style={styles.symptomInput}
-                multiline
-                placeholder="예: 냉방이 잘 안돼요, 물이 새요 등"
-                value={symptom}
-                onChangeText={setSymptom}
-              />
-              </View>
-          )}
+        {blueprintValue ? (
+          <View style={styles.section}>
+            <SectionTitle>작업 범위 도면</SectionTitle>
+            <Card style={styles.mediaCard}>
+              {isRemoteImage(blueprintValue) ? (
+                <Image
+                  source={{ uri: blueprintValue }}
+                  resizeMode="contain"
+                  style={styles.blueprint}
+                  accessibilityLabel={`${subtype.name} ${currentTier?.tier ?? ''} 작업 범위 도면`}
+                />
+              ) : (
+                <View style={styles.blueprintPlaceholder}>
+                  <View style={styles.placeholderIcon}>
+                    <Ionicons name="map-outline" size={28} color={colors.primary} />
+                  </View>
+                  <Text style={styles.placeholderTitle}>수작업 도면 원본 연결 대기</Text>
+                  <Text style={styles.placeholderText}>
+                    데이터에는 ‘{blueprintValue}’가 지정되어 있지만 저장소에서 원본을 찾지 못했습니다.
+                    파일이 복구되면 이 영역에 그대로 표시됩니다.
+                  </Text>
+                </View>
+              )}
+            </Card>
+          </View>
+        ) : null}
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleConfirm}>
-          <Text style={styles.submitTxt}>예약 진행하기</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </LinearGradient>
+        {currentTier?.assets?.parts?.length ? (
+          <View style={styles.section}>
+            <SectionTitle>관리 부위</SectionTitle>
+            <View style={styles.chips} accessibilityRole="radiogroup">
+              {currentTier.assets.parts.map(part => {
+                const key = part.partId ?? part.url;
+                return (
+                  <ChoiceChip
+                    key={key}
+                    label={part.label || '관리 부위'}
+                    selected={selectedPartId === key}
+                    onPress={() => {
+                      setSelectedPartId(key);
+                      setPartImageFailed(false);
+                    }}
+                  />
+                );
+              })}
+            </View>
+
+            {selectedPart ? (
+              <Card style={styles.partPreview}>
+                {isRemoteImage(selectedPart.url) && !partImageFailed ? (
+                  <Image
+                    source={{ uri: selectedPart.url }}
+                    resizeMode="cover"
+                    style={styles.partImage}
+                    onError={() => setPartImageFailed(true)}
+                    accessibilityLabel={`${selectedPart.label ?? '선택한 부위'} 작업 예시`}
+                  />
+                ) : (
+                  <View style={styles.partFallback}>
+                    <Ionicons name="image-outline" size={28} color={colors.textMuted} />
+                    <Text style={styles.partFallbackText}>작업 예시 이미지를 준비 중입니다.</Text>
+                  </View>
+                )}
+                <Text style={styles.partCaption}>
+                  {selectedPart.label || '선택한 부위'} 관리 예시
+                </Text>
+              </Card>
+            ) : null}
+          </View>
+        ) : null}
+
+        {requiredOptions.length > 0 ? (
+          <View style={styles.section}>
+            <SectionTitle>추가 옵션</SectionTitle>
+            {requiredOptions.map(option => (
+              <Card key={option._id} style={styles.optionCard}>
+                <Text style={styles.optionLabel}>{option.label}</Text>
+                <View style={styles.optionChoices} accessibilityRole="radiogroup">
+                  {option.choices.map(choice => {
+                    const selected =
+                      selectedOptions[option.key]?.selectedValue === choice.value;
+                    return (
+                      <Pressable
+                        key={choice.value}
+                        onPress={() => {
+                          setSelectedOptions(current => ({
+                            ...current,
+                            [option.key]: {
+                              _id: option._id,
+                              key: option.key,
+                              label: option.label,
+                              selectedLabel: choice.label,
+                              selectedValue: choice.value,
+                              extraCost: choice.extraCost,
+                            },
+                          }));
+                          setValidationError(null);
+                        }}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`${choice.label}, ${formatPrice(choice.extraCost)} 추가`}
+                        accessibilityState={{ checked: selected }}
+                        style={({ pressed }) => [
+                          styles.optionChoice,
+                          selected && styles.optionChoiceSelected,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <View style={styles.optionCopy}>
+                          <Text
+                            style={[
+                              styles.optionChoiceLabel,
+                              selected && styles.optionChoiceLabelSelected,
+                            ]}
+                          >
+                            {choice.label}
+                          </Text>
+                          <Text style={styles.optionPrice}>
+                            {choice.extraCost === 0
+                              ? '추가 금액 없음'
+                              : `+${formatPrice(choice.extraCost)}`}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                          size={22}
+                          color={selected ? colors.primary : colors.border}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </Card>
+            ))}
+          </View>
+        ) : null}
+
+        {serviceType.name === 'fix' ? (
+          <View style={styles.section}>
+            <FormField
+              label="고장 증상"
+              value={symptom}
+              onChangeText={setSymptom}
+              placeholder="예: 냉방이 약하거나 실내기에서 물이 새요."
+              multiline
+              maxLength={2000}
+              helper={`${symptom.length}/2000자 · 증상을 자세히 적으면 상담이 빨라집니다.`}
+            />
+          </View>
+        ) : null}
+
+        <Card style={styles.estimateCard}>
+          <View style={styles.estimateRow}>
+            <View>
+              <Text style={styles.estimateLabel}>
+                {isPreview ? '미리보기 견적' : '현재 예상 금액'}
+              </Text>
+              <Text style={styles.estimateHelp}>
+                {isPreview
+                  ? '실제 가격은 API 연결 후 확인됩니다.'
+                  : '최종 금액은 서버 기준으로 확정됩니다.'}
+              </Text>
+            </View>
+            <Text style={styles.estimateValue}>
+              {estimate === null ? '상담 필요' : formatPrice(estimate)}
+            </Text>
+          </View>
+        </Card>
+
+        {validationError ? (
+          <View style={styles.validation} accessibilityRole="alert">
+            <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+            <Text style={styles.validationText}>{validationError}</Text>
+          </View>
+        ) : null}
+
+        <Button
+          label={isPreview ? '일정 화면 미리보기' : '일정 선택으로 이동'}
+          icon="calendar-outline"
+          onPress={handleConfirm}
+          style={styles.submit}
+        />
+      </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: { flex: 1 },
-  container: {
-    paddingTop: 60,
-    paddingBottom: 40,
-    paddingHorizontal: 24,
-    alignItems: 'center',
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
-  title: {
-    fontFamily: 'JalnanGothic',
-    fontSize: 28,
-    color: '#010198',
-    textAlign: 'center',
-  },
-  subTitle: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 14,
-    marginTop: 6,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  tierList: {
+  previewNotice: {
+    marginBottom: spacing.lg,
+    padding: spacing.md,
     flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 20,
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  
-  tierButton: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 22,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.primarySoft,
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySubtle,
   },
-  
-  tierActive: {
-    backgroundColor: '#007BFF',
-    borderColor: '#007BFF',
+  previewCopy: {
+    flex: 1,
+    marginLeft: spacing.sm,
   },
-  
-  tierLabel: {
-    fontFamily: 'Pretendard-Bold',
-    fontSize: 16,
-    color: '#010198',
-  },
-
-  tierLabelSelected: {
-    color: '#fff',
-  },
-
-  tierPrice: {
-    fontFamily: 'Pretendard-Bold',
-    fontSize: 16,
-    color: '#000',
-    marginTop: 4,
-  },
-
-  tierPriceSelected: {
-    color: '#fff',
-  },  
-  partList: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 24,
-  },
-  partButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffffaa',
-    borderRadius: 10,
-  },
-  partActive: {
-    backgroundColor: '#007BFF',
-  },
-  partLabel: {
-    fontFamily: 'Pretendard-Bold',
+  previewTitle: {
+    fontFamily: fonts.semibold,
     fontSize: 14,
-    color: '#333',
-  },
-  previewBox: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 24,
-  },
-  
-  previewImage: {
-    width: '100%',
-    height: 200,
-    resizeMode: 'cover',
-    marginBottom: 12,
-    borderRadius: 10,
+    lineHeight: 20,
+    color: colors.primaryDark,
   },
   previewText: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 14,
-    textAlign: 'center',
-    color: '#444',
+    marginTop: spacing.xxs,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
   },
-
-  optionsBox: {
-    width: '100%',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 20,
+  tierGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -spacing.xxs,
   },
-  optionHeader: {
-    fontFamily: 'Pretendard-Bold',
-    fontSize: 16,
-    marginBottom: 12,
-    color: '#010198',
+  tierCard: {
+    minWidth: 132,
+    minHeight: 126,
+    flexBasis: '30%',
+    flexGrow: 1,
+    margin: spacing.xxs,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
   },
-  optionGroup: {
-    marginBottom: 12,
+  tierCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySubtle,
   },
-  optionLabel: {
-    fontFamily: 'Pretendard-SemiBold',
-    fontSize: 15,
-    marginBottom: 4,
-  },
-  optionChoiceButton: {
-    backgroundColor: '#e6efff',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    marginVertical: 4,
-  },
-  optionChoiceSelected: {
-    backgroundColor: '#007BFF',
-  },
-  optionChoiceText: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 15,
-    color: '#333',
-  },
-  optionChoiceTextSelected: {
-    color: '#fff',
-    fontFamily: 'Pretendard-Bold', 
-  },
-
-  blueprintContainer: {
-    marginTop: 20,
-    width: '100%',
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 20,
+  tierIcon: {
+    width: 34,
+    height: 34,
+    marginBottom: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 17,
+    backgroundColor: colors.primarySoft,
   },
-  
+  tierIconActive: {
+    backgroundColor: colors.primary,
+  },
+  tierName: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  tierNameActive: {
+    color: colors.primaryDark,
+  },
+  tierPrice: {
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  tierPriceActive: {
+    color: colors.primary,
+  },
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  emptyText: {
+    marginLeft: spacing.sm,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+  },
+  memo: {
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: radius.md,
+    backgroundColor: colors.warningSoft,
+  },
+  memoText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.warning,
+  },
+  section: {
+    marginTop: spacing.xl,
+  },
+  mediaCard: {
+    padding: spacing.sm,
+  },
   blueprint: {
     width: '100%',
-    height: 350,
-    resizeMode: 'contain',
+    height: 310,
+    borderRadius: radius.md,
   },
-  partLabelActive: {
-    color: '#ffffff',
-  },
-  backButton: {
-    position: 'absolute',
-    left: 24,
-    top: 60,
-    padding: 8,
-  },
-  backIcon: { width: 24, height: 24, tintColor: '#010198' },
-  
-  submitBtn: {
-    backgroundColor: '#007BFF',
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 24,
-    width: '100%',
+  blueprintPlaceholder: {
+    minHeight: 210,
+    padding: spacing.xl,
     alignItems: 'center',
-    },
-
-    submitTxt: {
-      color: '#fff', 
-      fontSize: 16, 
-      fontFamily: 'Pretendard-Bold'
-    },
-
-  symptomBox: {
-  width: '100%',
-  paddingTop: 0,
-  paddingHorizontal: 0,
-  paddingBottom: 0,
-  marginTop: 20,
-  marginBottom: 20,
-  backgroundColor: 'transparent',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySubtle,
   },
-
-symptomInput: {
-  fontFamily: 'Pretendard-Regular',
-  fontSize: 14,
-  color: '#333',
-  padding: 16,
-  textAlignVertical: 'top',
-  minHeight: 120,
-  width: '100%',
-  borderRadius: 10,
-  borderColor: '#ccc',
-  borderWidth: 1,
-  backgroundColor: '#fff',
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.06,
-  shadowRadius: 4,
-  elevation: 2,
-},
-
-tierMemo: {
-  fontFamily: 'Pretendard-Regular',
-  fontSize: 13,
-  color: '#cc0000',
-  textAlign: 'center',
-  marginTop: 6,
-  marginBottom: 16,
-  paddingHorizontal: 8,
-}
-
+  placeholderIcon: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 26,
+    backgroundColor: colors.primarySoft,
+  },
+  placeholderTitle: {
+    marginTop: spacing.md,
+    textAlign: 'center',
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    color: colors.text,
+  },
+  placeholderText: {
+    marginTop: spacing.xs,
+    textAlign: 'center',
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  partPreview: {
+    padding: spacing.sm,
+  },
+  partImage: {
+    width: '100%',
+    height: 210,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  partFallback: {
+    height: 150,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  partFallbackText: {
+    marginTop: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  partCaption: {
+    marginTop: spacing.sm,
+    textAlign: 'center',
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  optionCard: {
+    marginBottom: spacing.sm,
+  },
+  optionLabel: {
+    marginBottom: spacing.sm,
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.text,
+  },
+  optionChoices: {
+    gap: spacing.xs,
+  },
+  optionChoice: {
+    minHeight: 58,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  optionChoiceSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySubtle,
+  },
+  optionCopy: {
+    flex: 1,
+  },
+  optionChoiceLabel: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  optionChoiceLabelSelected: {
+    fontFamily: fonts.semibold,
+    color: colors.primaryDark,
+  },
+  optionPrice: {
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  estimateCard: {
+    marginTop: spacing.lg,
+    borderColor: colors.primarySoft,
+    backgroundColor: colors.primarySubtle,
+  },
+  estimateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  estimateLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  estimateHelp: {
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textMuted,
+  },
+  estimateValue: {
+    marginLeft: spacing.md,
+    fontFamily: fonts.bold,
+    fontSize: 19,
+    color: colors.primaryDark,
+  },
+  validation: {
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: radius.sm,
+    backgroundColor: colors.dangerSoft,
+  },
+  validationText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.danger,
+  },
+  submit: {
+    marginTop: spacing.lg,
+  },
+  pressed: {
+    opacity: 0.78,
+  },
 });

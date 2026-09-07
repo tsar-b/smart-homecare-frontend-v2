@@ -6,6 +6,8 @@ node_modules/
 # Expo
 .expo/
 dist/
+.review-dist/
+.review-web-dist/
 web-build/
 expo-env.d.ts
 
@@ -33,9 +35,17 @@ yarn-error.*
 # local env files
 .env*.local
 .env
+.env.*
+!.env.example
+.npm-cache/
+.qa/
 
 # typescript
 *.tsbuildinfo
+
+# Python helper caches
+__pycache__/
+*.py[cod]
 
 # Android
 android/

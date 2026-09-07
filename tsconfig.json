@@ -4,5 +4,6 @@
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["node_modules", "website-v1", ".review-dist", ".review-web-dist"]
 }

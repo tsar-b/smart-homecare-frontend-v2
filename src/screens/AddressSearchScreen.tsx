@@ -1,250 +1,480 @@
-import React, { useState, useCallback } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
+  FlatList,
+  Pressable,
+  StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Image,
-  Alert,
-  ScrollView,
+  View,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
-import debounce from 'lodash.debounce';
-import axios from 'axios';
-import { searchAddress } from '../services/services';
 
-const SERVER_URL = process.env.SERVER_URL;
-const backIcon = require('./asset/icons/back-button.png');
+import { ApiError } from '../api';
+import {
+  AppHeader,
+  AppScreen,
+  Button,
+  Card,
+  FormField,
+  PageIntro,
+  StateView,
+} from '../components';
+import { useAuth } from '../context/AuthContext';
+import type { AddressSearchResult } from '../domain';
+import type { AddressReturnRoute, RootStackParamList } from '../navigation/AppNavigator';
+import { colors, fonts, layout, radius, spacing } from '../theme/tokens';
 
-export default function AddressSearchScreen() {
-  const navigation = useNavigation<any>();
-  const { params } = useRoute<any>();
-  const onSelect = params?.onSelect as (addr: string) => void;
+type AddressRoute = RouteProp<RootStackParamList, 'AddressSearchScreen'>;
+type AddressNavigation = NativeStackNavigationProp<RootStackParamList, 'AddressSearchScreen'>;
 
+function primaryAddress(item: AddressSearchResult): string {
+  return item.addressName;
+}
+
+function secondaryAddress(item: AddressSearchResult): string | null {
+  return item.lotAddress && item.lotAddress !== item.addressName ? item.lotAddress : null;
+}
+
+function addressKey(item: AddressSearchResult, index: number): string {
+  return `${item.addressName}-${item.longitude ?? ''}-${item.latitude ?? ''}-${index}`;
+}
+
+function addressErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'REQUEST_CANCELLED') return '';
+  if (error instanceof ApiError && error.code === 'KAKAO_NOT_CONFIGURED') {
+    return '주소 검색 키가 아직 설정되지 않았습니다.';
+  }
+  if (error instanceof ApiError && error.status === 429) {
+    return '검색 요청이 많습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  if (error instanceof ApiError && error.code === 'NETWORK_ERROR') {
+    return '주소 검색 서버에 연결할 수 없습니다.';
+  }
+  return '주소를 검색하지 못했습니다. 검색어를 확인하고 다시 시도해 주세요.';
+}
+
+function returnAddress(
+  navigation: AddressNavigation,
+  returnTo: AddressReturnRoute,
+  selectedAddress: string,
+  selectedAddressDetail: string,
+) {
+  const params = { selectedAddress, selectedAddressDetail };
+  switch (returnTo) {
+    case 'Register':
+      navigation.popTo('Register', params, { merge: true });
+      break;
+    case 'Settings':
+      navigation.popTo('Settings', params, { merge: true });
+      break;
+    case 'AdminSettings':
+      navigation.popTo('AdminSettings', params, { merge: true });
+      break;
+  }
+}
+
+function AddressSearchScreen() {
+  const navigation = useNavigation<AddressNavigation>();
+  const { returnTo } = useRoute<AddressRoute>().params;
+  const { api, configurationError } = useAuth();
+  const activeSearch = useRef<AbortController | null>(null);
+  const resultList = useRef<FlatList<AddressSearchResult>>(null);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<readonly AddressSearchResult[]>([]);
+  const [selected, setSelected] = useState<AddressSearchResult | null>(null);
   const [detail, setDetail] = useState('');
-  const [selectedAddr, setSelectedAddr] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  /** ─── debounced primary search (keep all hits so roads show) ─── */
-  const doSearch = useCallback(
-    debounce(async (q: string) => {
-      if (!q.trim()) return;
-      setLoading(true);
-      try {
-        const list = await searchAddress(q);
-        setResults(list);
-      } catch (err) {
-        console.error(err);
-      } finally {
+  useEffect(() => () => activeSearch.current?.abort(), []);
+
+  const search = async () => {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 2) {
+      setError('도로명, 건물명 또는 지번을 2자 이상 입력해 주세요.');
+      return;
+    }
+    if (!api) {
+      setError(configurationError ?? '서버 연결 설정이 필요합니다.');
+      return;
+    }
+
+    activeSearch.current?.abort();
+    const controller = new AbortController();
+    activeSearch.current = controller;
+    setLoading(true);
+    setHasSearched(true);
+    setError(null);
+    setSelected(null);
+
+    try {
+      const response = await api.address.search(normalizedQuery, { signal: controller.signal });
+      const seen = new Set<string>();
+      const unique = response.filter((item) => {
+        const address = primaryAddress(item);
+        if (!address || seen.has(address)) return false;
+        seen.add(address);
+        return true;
+      });
+      setResults(unique);
+    } catch (caught) {
+      const message = addressErrorMessage(caught);
+      if (message) {
+        setError(message);
+        setResults([]);
+      }
+    } finally {
+      if (activeSearch.current === controller) {
+        activeSearch.current = null;
         setLoading(false);
       }
-    }, 300),
-    [],
-  );
-
-  const onSearch = () => doSearch(query);
-
-  const buildAddr = (item: any) =>
-    item.road_address?.address_name ?? item.address_name;
-
-  /** ─── road‑only → fetch numbered variants ─── */
-  const fetchExpandedAddresses = async (base: string) => {
-    try {
-      setLoading(true);
-      setResults([]);
-      setSelectedAddr('');
-      const res = await axios.get('/api/kakao/expand-address', {
-        baseURL: `${SERVER_URL}`,
-        params: { query: base.trim() },
-      });
-      setResults(res.data);
-    } catch (err) {
-      console.error('확장 주소 불러오기 실패', err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handlePressAddr = (item: any) => {
-    const addr = buildAddr(item);
-    if (!addr) return;
-    if (!/\d/.test(addr)) {
-      fetchExpandedAddresses(addr); // road only → expand
-      return;
-    }
-    setSelectedAddr(addr); // full address selected
+  const clearSearch = () => {
+    activeSearch.current?.abort();
+    activeSearch.current = null;
+    setQuery('');
+    setResults([]);
+    setSelected(null);
+    setDetail('');
+    setError(null);
+    setHasSearched(false);
+    setLoading(false);
   };
 
   const confirm = () => {
-    if (!selectedAddr) return Alert.alert('주소를 먼저 선택해 주세요');
-    onSelect?.(`${selectedAddr} ${detail.trim()}`.trim());
-    navigation.goBack();
+    if (!selected) {
+      setError('목록에서 주소를 먼저 선택해 주세요.');
+      return;
+    }
+    returnAddress(navigation, returnTo, primaryAddress(selected), detail.trim());
   };
 
-  /* ---------------------------------------------------------------- */
+  const emptyState = (
+    <StateView
+      title={hasSearched ? '검색 결과가 없습니다' : '주소를 검색해 주세요'}
+      message={
+        hasSearched
+          ? '도로명과 건물번호를 함께 입력하면 더 정확하게 찾을 수 있습니다.'
+          : '도로명, 건물명 또는 지번으로 방문 주소를 찾을 수 있습니다.'
+      }
+      icon={hasSearched ? 'search-outline' : 'location-outline'}
+    />
+  );
+
   return (
-    <LinearGradient colors={['#d0eaff', '#89c4f4']} style={{ flex: 1 }}>
-      {/* header */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Image source={backIcon} style={{ width: 26, height: 26, tintColor: '#007BFF' }} />
-      </TouchableOpacity>
+    <AppScreen padded={false} keyboardAware>
+      <AppHeader title="주소 검색" onBack={() => navigation.goBack()} />
+      <View style={styles.content}>
+        <PageIntro
+          title="방문 주소 찾기"
+          description="검색 결과에서 기본 주소를 고른 뒤 상세주소를 입력하세요."
+        />
 
-      <View style={styles.container}>
-        <Text style={styles.title}>주소 검색</Text>
-
-        {/* search bar */}
-        <View style={styles.searchWrap}>
-          <TextInput
-            style={styles.input}
-            placeholder="도로명 + 건물번호 (예: 삼산로 1)"
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={onSearch}
-            returnKeyType="search"
-          />
-          <TouchableOpacity style={styles.searchBtn} onPress={onSearch}>
-            <Text style={styles.searchTxt}>검색</Text>
-          </TouchableOpacity>
+        <View style={styles.searchRow}>
+          <View style={styles.searchBox}>
+            <Ionicons name="search-outline" size={20} color={colors.textMuted} />
+            <TextInput
+              value={query}
+              onChangeText={(value) => {
+                setQuery(value);
+                if (error) setError(null);
+              }}
+              onSubmitEditing={() => void search()}
+              placeholder="예: 테헤란로 123"
+              placeholderTextColor={colors.disabled}
+              returnKeyType="search"
+              autoCorrect={false}
+              accessibilityLabel="검색할 주소"
+              accessibilityHint="도로명, 건물명 또는 지번을 입력하세요"
+              style={styles.searchInput}
+            />
+            {query ? (
+              <Pressable
+                onPress={clearSearch}
+                accessibilityRole="button"
+                accessibilityLabel="검색어 지우기"
+                hitSlop={8}
+                style={({ pressed }) => pressed && styles.pressed}
+              >
+                <Ionicons name="close-circle" size={20} color={colors.disabled} />
+              </Pressable>
+            ) : null}
+          </View>
+          <Pressable
+            onPress={() => void search()}
+            disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="주소 검색"
+            accessibilityState={{ disabled: loading, busy: loading }}
+            style={({ pressed }) => [
+              styles.searchButton,
+              pressed && !loading && styles.pressed,
+              loading && styles.disabled,
+            ]}
+          >
+            <Ionicons name="search" size={19} color={colors.white} />
+            <Text style={styles.searchButtonText}>검색</Text>
+          </Pressable>
         </View>
 
-        {/* spinner always shows during search/expand */}
-        {loading && (
-          <View style={{ paddingTop: 16, alignItems: 'center' }}>
-            <ActivityIndicator size="small" color="#007BFF" />
+        {error ? (
+          <View style={styles.errorBanner} accessibilityRole="alert">
+            <Ionicons name="warning-outline" size={18} color={colors.danger} />
+            <Text style={styles.errorText}>{error}</Text>
           </View>
-        )}
+        ) : null}
 
-        {/* address list & detail */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }}>
-          {results.map((item, i) => {
-            const addr = buildAddr(item);
-            const picked = selectedAddr === addr;
-            return (
-              <TouchableOpacity
-                key={i}
-                style={[styles.card, picked && styles.cardSelected]}
-                onPress={() => handlePressAddr(item)}
-              >
-                <Text style={[styles.addr, picked && styles.addrSelected]}>{addr}</Text>
-              </TouchableOpacity>
-            );
-          })}
-
-          {selectedAddr && (
-            <View style={styles.detailWrap}>
-              <Text style={styles.detailLabel}>상세주소</Text>
-              <TextInput
-                style={styles.detailInput}
-                placeholder="예: 101호"
-                value={detail}
-                onChangeText={setDetail}
-              />
-              <TouchableOpacity style={styles.confirmBtn} onPress={confirm}>
-                <Text style={styles.confirmText}>주소 선택 완료</Text>
-              </TouchableOpacity>
-            </View>
+        <View style={styles.resultsWrap}>
+          {loading ? (
+            <StateView title="주소를 검색하는 중입니다" loading />
+          ) : (
+            <FlatList
+              ref={resultList}
+              data={results}
+              keyExtractor={addressKey}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              ListHeaderComponent={selected ? (
+                <Card style={styles.selectionCard} elevated>
+                  <View style={styles.selectedHeading}>
+                    <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+                    <View style={styles.selectedCopy}>
+                      <Text style={styles.selectedLabel}>선택한 주소</Text>
+                      <Text style={styles.selectedAddress}>{primaryAddress(selected)}</Text>
+                    </View>
+                  </View>
+                  <FormField
+                    label="상세주소"
+                    value={detail}
+                    onChangeText={setDetail}
+                    placeholder="동, 호수 등 (선택)"
+                    returnKeyType="done"
+                    onSubmitEditing={confirm}
+                    helper="상세주소가 없다면 비워 두어도 됩니다."
+                  />
+                  <Button
+                    label="이 주소 사용"
+                    icon="arrow-forward"
+                    onPress={confirm}
+                    accessibilityHint="선택한 주소를 이전 화면에 적용합니다"
+                  />
+                </Card>
+              ) : null}
+              ListEmptyComponent={emptyState}
+              contentContainerStyle={[
+                styles.resultsContent,
+                results.length === 0 && styles.emptyResults,
+              ]}
+              renderItem={({ item }) => {
+                const address = primaryAddress(item);
+                const secondary = secondaryAddress(item);
+                const picked = selected?.addressName === address;
+                const building = item.buildingName;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      setSelected(item);
+                      setError(null);
+                      requestAnimationFrame(() => {
+                        resultList.current?.scrollToOffset({ offset: 0, animated: true });
+                      });
+                    }}
+                    accessibilityRole="radio"
+                    accessibilityLabel={`${address}${secondary ? `, 지번 ${secondary}` : ''}`}
+                    accessibilityState={{ selected: picked }}
+                    style={({ pressed }) => [
+                      styles.resultCard,
+                      picked && styles.resultCardSelected,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={[styles.locationIcon, picked && styles.locationIconSelected]}>
+                      <Ionicons
+                        name={picked ? 'checkmark' : 'location-outline'}
+                        size={19}
+                        color={picked ? colors.white : colors.primary}
+                      />
+                    </View>
+                    <View style={styles.addressCopy}>
+                      <Text style={styles.primaryAddress}>{address}</Text>
+                      {secondary ? <Text style={styles.secondaryAddress}>지번 {secondary}</Text> : null}
+                      {building ? <Text style={styles.buildingName}>{building}</Text> : null}
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
           )}
-        </ScrollView>
+        </View>
+
       </View>
-    </LinearGradient>
+    </AppScreen>
   );
 }
 
+export default AddressSearchScreen;
+
 const styles = StyleSheet.create({
-  backBtn: {
-    position: 'absolute',
-    top: 48,
-    left: 24,
-    zIndex: 10,
-  },
-  container: { flex: 1, paddingTop: 90, paddingHorizontal: 24 },
-  title: {
-    fontFamily: 'JalnanGothic',
-    fontSize: 28,
-    color: '#010198',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  searchWrap: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    alignItems: 'center',
-    paddingLeft: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  input: {
+  content: {
     flex: 1,
-    height: 48,
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 14,
+    paddingHorizontal: layout.horizontalPadding,
+    paddingTop: spacing.lg,
   },
-  searchBtn: {
-    backgroundColor: '#007BFF',
-    paddingHorizontal: 20,
-    height: 48,
-    borderTopRightRadius: 999,
-    borderBottomRightRadius: 999,
-    justifyContent: 'center',
-  },
-  searchTxt: { color: '#fff', fontFamily: 'Pretendard-Bold' },
-  card: {
-    backgroundColor: '#fff',
-    padding: 14,
-    borderRadius: 14,
-    marginTop: 14,
-    borderColor: '#ccc',
-    borderWidth: 1,
-  },
-  cardSelected: {
-    backgroundColor: '#007BFF',
-    borderColor: '#0056b3',
-  },
-  addr: {
-    fontFamily: 'Pretendard-Medium',
-    fontSize: 13,
-    color: '#222',
-  },
-  addrSelected: {
-    color: '#fff',
-  },
-  detailWrap: {
-    marginTop: 20,
-  },
-  detailLabel: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 12,
-    color: '#555',
-    marginBottom: 4,
-  },
-  detailInput: {
-    height: 44,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    fontFamily: 'Pretendard-Regular',
-    color: '#222',
-  },
-  confirmBtn: {
-    marginTop: 12,
-    backgroundColor: '#007BFF',
-    borderRadius: 10,
-    paddingVertical: 12,
+  searchRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  confirmText: {
-    color: '#fff',
+  searchBox: {
+    minHeight: 50,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: spacing.sm,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.text,
+  },
+  searchButton: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xxs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  searchButtonText: {
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    color: colors.white,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSoft,
+  },
+  errorText: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.danger,
+  },
+  resultsWrap: {
+    flex: 1,
+    minHeight: 180,
+  },
+  resultsContent: {
+    paddingVertical: spacing.xxs,
+    paddingBottom: spacing.md,
+    gap: spacing.xs,
+  },
+  emptyResults: {
+    flexGrow: 1,
+  },
+  resultCard: {
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+  },
+  resultCardSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySubtle,
+  },
+  locationIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySoft,
+  },
+  locationIconSelected: {
+    backgroundColor: colors.primary,
+  },
+  addressCopy: {
+    flex: 1,
+  },
+  primaryAddress: {
+    fontFamily: fonts.semibold,
     fontSize: 14,
-    fontFamily: 'Pretendard-Bold',
+    lineHeight: 20,
+    color: colors.text,
+  },
+  secondaryAddress: {
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  buildingName: {
+    marginTop: 2,
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.primaryDark,
+  },
+  selectionCard: {
+    marginTop: spacing.xxs,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  selectedHeading: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  selectedCopy: {
+    flex: 1,
+  },
+  selectedLabel: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: colors.success,
+  },
+  selectedAddress: {
+    marginTop: 2,
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  disabled: {
+    opacity: 0.5,
   },
 });

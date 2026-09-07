@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "smart-homecare-app",
+    "name": "Smart HomeCare",
     "slug": "smart-homecare-app",
     "scheme": "smarthomecareapplication",
-    "version": "1.2.0",
+    "version": "2.0.0",
     "orientation": "portrait",
-    "icon": "./asset/icon.png",
+    "icon": "./asset/brand/app-icon-v2.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "splash": {
-      "image": "./asset/splash-icon.png",
-      "resizeMode": "cover",
-      "backgroundColor": "#d0eaff"
+      "image": "./asset/brand/splash-wordmark-v2.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F7FB"
     },
     "ios": {
       "supportsTablet": false,
@@ -19,8 +19,6 @@
       "buildNumber": "40",
       "appleTeamId": "V4K59G96Q4",
       "infoPlist": {
-        "NSCameraUsageDescription": "이 앱은 예약을 위한 프로필 사진 기능에 카메라 접근 권한이 필요합니다.",
-        "NSLocationWhenInUseUsageDescription": "주소 확인 시 위치 기반 기능이 필요할 수 있습니다.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "usesNonExemptEncryption": false
@@ -29,12 +27,12 @@
       "package": "com.shc.smarthomecareapp",
       "versionCode": 40,
       "adaptiveIcon": {
-        "foregroundImage": "./asset/adaptive-icon.png",
-        "backgroundColor": "#d0eaff"
+        "foregroundImage": "./asset/brand/adaptive-foreground-v2.png",
+        "backgroundColor": "#F5F7FB"
       }
     },
     "web": {
-      "favicon": "./asset/favicon.png"
+      "favicon": "./asset/brand/favicon-v2.png"
     },
     "plugins": [
       [
@@ -46,15 +44,7 @@
             "targetSdkVersion": 35,
             "minSdkVersion": 24,
             "useAndroidX": true,
-            "enableJetifier": true,
-            "manifest": {
-              "usesFeatures": [
-                {
-                  "name": "android.hardware.telephony",
-                  "required": true
-                }
-              ]
-            }
+            "enableJetifier": true
           },
           "gradleProperties": {
             "kotlinVersion": "2.0.21",
@@ -63,15 +53,18 @@
           }
         }
       ],
-      "./plugins/fix-kotlin-version",
-      [
-        "@react-native-seoul/kakao-login",
-        {
-    "kakaoAppKey": "${EXPO_PUBLIC_KAKAO_APP_KEY}"
-    }
-      ],
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker",
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "고장 부위와 설치 환경 사진 또는 동영상을 예약에 첨부하려면 사진 보관함 접근이 필요합니다.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "extra": {
       "eas": {
@@ -82,7 +75,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/4d87156c-a8ab-40c7-bcf7-48a06ee13b79"
+      "url": "https://u.expo.dev/fe782eb9-d449-4468-bb1b-550a4c509458"
     }
   }
 }

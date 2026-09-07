@@ -1,249 +1,460 @@
-// src/screens/RegisterScreen.tsx
-import React, { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Toast from 'react-native-toast-message';
+
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  Alert,
-  Modal,
-  TouchableOpacity,
-} from 'react-native';
-import axios from 'axios';
-import {
-  useNavigation,
-  useRoute,
-  RouteProp,
-} from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LinearGradient } from 'expo-linear-gradient';
+  AppHeader,
+  AppScreen,
+  Button,
+  Card,
+  FormField,
+  PageIntro,
+} from '../components';
+import { customerSafeErrorMessage } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import type { RootStackParamList } from '../navigation/AppNavigator';
+import { colors, fonts, radius, spacing } from '../theme/tokens';
 
-const API = process.env.SERVER_API;
+type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
+type FieldErrors = Partial<
+  Record<'name' | 'phone' | 'email' | 'password' | 'confirm' | 'address' | 'terms', string>
+>;
 
-/* ---------- nav / route generics ---------- */
-type RegNav   = NativeStackNavigationProp<RootStackParamList>;
-type RegRoute = RouteProp<RootStackParamList, 'Register'>;
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
 
-const RegisterScreen = () => {
-  const navigation = useNavigation<RegNav>();
-  const route      = useRoute<RegRoute>();
-  const { registerGuest } = useAuth();
+function toMessage(error: unknown): string {
+  return customerSafeErrorMessage(
+    error,
+    '등록하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요.',
+  );
+}
+
+export default function RegisterScreen({ navigation, route }: Props) {
   const isGuest = route.params?.isGuest ?? false;
+  const { registerAccount } = useAuth();
 
-  const [name, setName]                 = useState('');
-  const [phone, setPhone]               = useState('');
-  const [email, setEmail]               = useState('');
-  const [password, setPassword]         = useState('');
-  const [passwordConfirm, setPasswordConfirm] = useState('');
-  const [address, setAddress]           = useState('');
-  const [addressDetail, setAddressDetail] = useState('');
-  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [address, setAddress] = useState(route.params?.selectedAddress ?? '');
+  const [addressDetail, setAddressDetail] = useState(
+    route.params?.selectedAddressDetail ?? '',
+  );
+  const [agreed, setAgreed] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
 
-  /* ---------- helpers ---------- */
-  const handlePhoneInput = (input: string) => {
-    const digits = input.replace(/\D/g, '').slice(0, 11);
-    let formatted = digits;
-    if (digits.length > 3 && digits.length <= 7) {
-      formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
-    } else if (digits.length > 7) {
-      formatted = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  useEffect(() => {
+    if (route.params?.selectedAddress !== undefined) {
+      setAddress(route.params.selectedAddress);
     }
-    setPhone(formatted);
-  };
+    if (route.params?.selectedAddressDetail !== undefined) {
+      setAddressDetail(route.params.selectedAddressDetail);
+    }
+  }, [route.params?.selectedAddress, route.params?.selectedAddressDetail]);
 
-  const validateFields = () => {
-    const nameRx = /^[가-힣a-zA-Z\s\-]{2,}$/;
-    const phoneRx = /^010-\d{3,4}-\d{4}$/;
-    const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const pwRx = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
+  const title = isGuest ? '비회원 접수 정보' : '회원가입';
+  const description = isGuest
+    ? '방문 예약에 필요한 최소 정보만 받습니다.'
+    : '예약 확인과 주소 관리를 위한 계정을 만드세요.';
 
-    if (!name) return '이름을 입력해주세요.';
-    if (!nameRx.test(name)) return '이름은 한글/영문 2자 이상 (공백·하이픈 허용)';
-    if (!phone) return '휴대폰 번호를 입력해주세요.';
-    if (!phoneRx.test(phone)) return '휴대폰 번호는 010-XXXX-XXXX 형식이어야 합니다.';
-    if (!address) return '주소를 입력해주세요.';
-
-    if (!isGuest) {
-      if (!email) return '이메일을 입력해주세요.';
-      if (!emailRx.test(email)) return '이메일 형식이 올바르지 않습니다.';
-      if (!password) return '비밀번호를 입력해주세요.';
-      if (!pwRx.test(password)) return '비밀번호는 대/소문자·숫자 포함 6자 이상';
-      if (!passwordConfirm) return '비밀번호 확인을 입력해주세요.';
-      if (password !== passwordConfirm) return '비밀번호가 일치하지 않습니다.';
+  const passwordStrength = useMemo(() => {
+    if (!password) return null;
+    if (password.length < 8) return '8자 이상 입력해 주세요.';
+    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      return '영문과 숫자를 함께 사용해 주세요.';
     }
     return null;
+  }, [password]);
+
+  if (isGuest) {
+    return (
+      <AppScreen padded={false}>
+        <AppHeader title="비회원 접수" onBack={() => navigation.goBack()} />
+        <View style={styles.content}>
+          <PageIntro
+            title="비회원 접수는 준비 중입니다"
+            description="전화번호 소유 확인과 서버 측 검증이 완료되기 전에는 개인정보를 등록하거나 예약을 접수하지 않습니다."
+          />
+          <Card style={styles.formCard}>
+            <View style={styles.unavailableRow} accessibilityRole="alert">
+              <Ionicons name="shield-outline" size={22} color={colors.primary} />
+              <Text style={styles.unavailableText}>
+                휴대전화 OTP 인증과 악용 방지 절차를 구현한 뒤 이 기능을 활성화합니다.
+              </Text>
+            </View>
+            <Button
+              label="로그인 화면으로 돌아가기"
+              variant="secondary"
+              icon="arrow-back-outline"
+              onPress={() => navigation.replace('Login')}
+              style={styles.submit}
+            />
+          </Card>
+        </View>
+      </AppScreen>
+    );
+  }
+
+  const validate = (): boolean => {
+    const next: FieldErrors = {};
+    const phoneDigits = phone.replace(/\D/g, '');
+
+    if (name.trim().length < 2) next.name = '이름을 2자 이상 입력해 주세요.';
+    if (phoneDigits.length < 10) next.phone = '연락 가능한 전화번호를 입력해 주세요.';
+
+    if (isGuest) {
+      if (!address.trim()) next.address = '방문 주소를 선택해 주세요.';
+    } else {
+      if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+        next.email = '이메일 형식을 확인해 주세요.';
+      }
+      if (passwordStrength) next.password = passwordStrength;
+      if (password !== confirmPassword) next.confirm = '비밀번호가 서로 다릅니다.';
+    }
+
+    if (!agreed) next.terms = '서비스 이용과 개인정보 처리 동의가 필요합니다.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
   const handleSubmit = async () => {
-    const error = validateFields();
-    if (error) {
-      Alert.alert('입력 오류', error);
+    setFormError(null);
+    if (isGuest) {
+      setFormError('비회원 접수는 휴대전화 인증 기능이 준비될 때까지 사용할 수 없습니다.');
       return;
     }
+    if (!validate()) return;
 
+    setPending(true);
     try {
-      if (isGuest) {
-        await registerGuest(name, phone, address, addressDetail);
-        Alert.alert('등록 완료', '비회원 정보가 저장되었습니다.');
-        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-      }
-      else {
-        await axios.post(`${API}/register`, {
-          name,
-          phone,
-          email,
-          password,
-          address,
-          addressDetail,
+      const result = await registerAccount({
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      if (result.requiresEmailConfirmation) {
+        Toast.show({
+          type: 'info',
+          text1: '이메일 확인이 필요합니다',
+          text2: '메일의 확인 링크를 연 뒤 로그인해 주세요.',
         });
-        Alert.alert('등록 성공!', '스마트홈케어 아이디 등록이 완료되었습니다.');
-        navigation.navigate('Login');
+        navigation.replace('Login', {
+          notice: '가입 이메일로 보낸 확인 링크를 연 뒤 로그인해 주세요.',
+        });
+        return;
       }
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message ?? '처리에 실패했습니다.');
+      Toast.show({
+        type: 'success',
+        text1: '회원가입이 완료되었습니다',
+        text2: '새 계정으로 로그인되었습니다.',
+      });
+    } catch (error) {
+      setFormError(toMessage(error));
+    } finally {
+      setPending(false);
     }
   };
 
-  /* ---------- UI ---------- */
   return (
-    <LinearGradient colors={['#d0eaff', '#89c4f4']} style={styles.container}>
-      <Text style={styles.title}>{isGuest ? '비회원 정보 등록' : '스마트홈케어에 가입하기'}</Text>
+    <AppScreen scroll keyboardAware padded={false}>
+      <AppHeader title={title} onBack={() => navigation.goBack()} />
+      <View style={styles.content}>
+        <PageIntro title={title} description={description} />
 
-      <TextInput placeholder="이름"            value={name}            onChangeText={setName}            style={styles.input} />
-      <TextInput placeholder="휴대폰 번호"    value={phone}           onChangeText={handlePhoneInput} style={styles.input} keyboardType="number-pad" maxLength={13} />
+        <Card style={styles.formCard}>
+          <FormField
+            label="이름"
+            value={name}
+            onChangeText={value => {
+              setName(value);
+              setErrors(current => ({ ...current, name: undefined }));
+            }}
+            placeholder="이름 입력"
+            autoComplete="name"
+            textContentType="name"
+            returnKeyType="next"
+            error={errors.name}
+          />
 
-      {!isGuest && (
-        <>
-          <TextInput placeholder="이메일"        value={email}           onChangeText={setEmail}          style={styles.input} autoCapitalize="none" />
-          <TextInput placeholder="패스워드"      value={password}        onChangeText={setPassword}       style={styles.input} secureTextEntry />
-          <TextInput placeholder="비밀번호 확인" value={passwordConfirm} onChangeText={setPasswordConfirm} style={styles.input} secureTextEntry />
-        </>
-      )}
+          <FormField
+            label="전화번호"
+            value={phone}
+            onChangeText={value => {
+              setPhone(formatPhone(value));
+              setErrors(current => ({ ...current, phone: undefined }));
+            }}
+            placeholder="010-0000-0000"
+            keyboardType="phone-pad"
+            autoComplete="tel"
+            textContentType="telephoneNumber"
+            returnKeyType="next"
+            error={errors.phone}
+          />
 
-      <TouchableOpacity
-        onPress={() =>
-          navigation.navigate('AddressSearchScreen', {
-            onSelect: (addr: string) => {
-              const tokens = addr.trim().split(' ');
-              if (tokens.length >= 2) {
-                setAddress(tokens.slice(0, -1).join(' ').trim());
-                setAddressDetail(tokens[tokens.length - 1].trim());
-              } else {
-                setAddress(addr);
-                setAddressDetail('');
-              }
-            },
-          })
-        }
-  style={styles.addressBox}
->
-  <Text style={address ? styles.addressText : styles.addressPlaceholder}>
-    {address || '주소 검색하기'}
-  </Text>
-</TouchableOpacity>
+          {!isGuest ? (
+            <>
+              <FormField
+                label="이메일"
+                value={email}
+                onChangeText={value => {
+                  setEmail(value);
+                  setErrors(current => ({ ...current, email: undefined }));
+                }}
+                placeholder="name@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                returnKeyType="next"
+                error={errors.email}
+              />
+              <FormField
+                label="비밀번호"
+                value={password}
+                onChangeText={value => {
+                  setPassword(value);
+                  setErrors(current => ({ ...current, password: undefined }));
+                }}
+                placeholder="영문과 숫자를 포함한 8자 이상"
+                secureTextEntry
+                autoCapitalize="none"
+                autoComplete="new-password"
+                textContentType="newPassword"
+                returnKeyType="next"
+                helper={password ? passwordStrength ?? '사용 가능한 비밀번호입니다.' : undefined}
+                error={errors.password}
+              />
+              <FormField
+                label="비밀번호 확인"
+                value={confirmPassword}
+                onChangeText={value => {
+                  setConfirmPassword(value);
+                  setErrors(current => ({ ...current, confirm: undefined }));
+                }}
+                placeholder="비밀번호 다시 입력"
+                secureTextEntry
+                autoCapitalize="none"
+                autoComplete="new-password"
+                textContentType="newPassword"
+                returnKeyType="done"
+                error={errors.confirm}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.fieldLabel}>방문 주소</Text>
+              <Pressable
+                onPress={() =>
+                  navigation.navigate('AddressSearchScreen', { returnTo: 'Register' })
+                }
+                accessibilityRole="button"
+                accessibilityLabel="방문 주소 검색"
+                style={({ pressed }) => [
+                  styles.addressButton,
+                  errors.address && styles.addressButtonError,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons name="location-outline" size={20} color={colors.primary} />
+                <Text style={[styles.addressText, !address && styles.placeholder]} numberOfLines={2}>
+                  {address || '주소를 검색해 주세요'}
+                </Text>
+                <Ionicons name="search-outline" size={19} color={colors.textMuted} />
+              </Pressable>
+              {errors.address ? <Text style={styles.fieldError}>{errors.address}</Text> : null}
+              <FormField
+                label="상세 주소"
+                value={addressDetail}
+                onChangeText={setAddressDetail}
+                placeholder="동 · 호수 등 (선택)"
+                autoComplete="street-address"
+                textContentType="fullStreetAddress"
+                returnKeyType="done"
+              />
+            </>
+          )}
 
-{addressDetail && (
-  <View style={styles.addressDetailBox}>
-    <Text style={{
-      color: '#333',
-      fontSize: 14,
-      fontFamily: 'Pretendard-Regular',
-    }}>
-      상세 주소: {addressDetail}
-    </Text>
-  </View>
-)}
+          <Pressable
+            onPress={() => {
+              setAgreed(value => !value);
+              setErrors(current => ({ ...current, terms: undefined }));
+            }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: agreed }}
+            accessibilityLabel="서비스 이용 및 개인정보 처리 동의"
+            style={({ pressed }) => [styles.consent, pressed && styles.pressed]}
+          >
+            <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
+              {agreed ? <Ionicons name="checkmark" size={16} color={colors.white} /> : null}
+            </View>
+            <Text style={styles.consentText}>
+              서비스 이용 및 예약 처리를 위한 개인정보 수집에 동의합니다.
+            </Text>
+          </Pressable>
+          {errors.terms ? <Text style={styles.fieldError}>{errors.terms}</Text> : null}
 
+          {formError ? (
+            <View style={styles.formError} accessibilityRole="alert">
+              <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+              <Text style={styles.formErrorText}>{formError}</Text>
+            </View>
+          ) : null}
 
+          <Button
+            label={isGuest ? '비회원 정보 등록' : '계정 만들기'}
+            onPress={() => void handleSubmit()}
+            loading={pending}
+            style={styles.submit}
+          />
+        </Card>
 
-      <TouchableOpacity style={styles.loginButton} onPress={handleSubmit}>
-        <Text style={styles.loginText}>
-          {isGuest ? '정보 등록 후 예약하기' : '회원가입'}
-        </Text>
-      </TouchableOpacity>
-    </LinearGradient>
+        <View style={styles.privacyNote}>
+          <Ionicons name="shield-checkmark-outline" size={18} color={colors.success} />
+          <Text style={styles.privacyText}>
+            입력한 정보는 계정 관리와 서비스 방문 예약에만 사용됩니다.
+          </Text>
+        </View>
+      </View>
+    </AppScreen>
   );
-};
-
-export default RegisterScreen;
-
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
   },
-  title: {
-    fontFamily: 'JalnanGothic',
-    fontSize: 28,
-    marginBottom: 20,
-    textAlign: 'center',
-    color: '#010198',
+  formCard: {
+    padding: spacing.xl,
   },
-  input: {
-    fontFamily: 'Pretendard-Regular',
+  fieldLabel: {
+    marginBottom: spacing.xs,
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+  },
+  addressButton: {
+    minHeight: 54,
+    marginBottom: spacing.xxs,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 14,
-    marginBottom: 12,
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
   },
-  addressBox: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 12,
-    padding: 14,
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    marginBottom: 12,
+  addressButtonError: {
+    borderColor: colors.danger,
   },
   addressText: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 16,
-  },
-  addressPlaceholder: {
-    fontFamily: 'Pretendard-Regular',
-    fontSize: 16,
-    color: '#999',
-  },
-  loginButton: {
-    backgroundColor: '#007BFF',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  loginText: {
-    fontFamily: 'Pretendard-Bold',
-    color: '#fff',
-    fontSize: 16,
-  },
-  modalContainer: {
     flex: 1,
-    padding: 24,
-    backgroundColor: '#fff',
+    marginHorizontal: spacing.sm,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.text,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontFamily: 'Pretendard-Bold',
-    marginBottom: 12,
-    textAlign: 'center',
+  placeholder: {
+    color: colors.disabled,
   },
-  addressOption: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderColor: '#eee',
+  fieldError: {
+    marginTop: spacing.xxs,
+    marginBottom: spacing.md,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.danger,
   },
-  addressDetailBox: {
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 12,
-  },  
+  consent: {
+    minHeight: 48,
+    paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    marginRight: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  checkboxChecked: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  consentText: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+  formError: {
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: radius.sm,
+    backgroundColor: colors.dangerSoft,
+  },
+  formErrorText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.danger,
+  },
+  submit: {
+    marginTop: spacing.lg,
+  },
+  privacyNote: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  privacyText: {
+    flex: 1,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textMuted,
+  },
+  unavailableRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  unavailableText: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.textSecondary,
+  },
+  pressed: {
+    opacity: 0.72,
+  },
 });

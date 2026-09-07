@@ -1,27 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import {
+  DefaultTheme,
+  NavigationContainer,
+  type Theme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { NavigationContainer } from '@react-navigation/native';
-import axios from 'axios';
-import { ActivityIndicator, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+
+import { Brand } from '../components';
 import { useAuth } from '../context/AuthContext';
-import LoginScreen from '../screens/LoginScreen';
-import HomeScreen from '../screens/HomeScreen';
+import AddressSearchScreen from '../screens/AddressSearchScreen';
+import AdminBookingList from '../screens/admin/AdminBookingList';
+import AdminDashboard from '../screens/admin/AdminDashboard';
+import AdminSettings from '../screens/admin/AdminSettings';
+import AdminUsers from '../screens/admin/AdminUsers';
 import BookingConfirm from '../screens/BookingConfirm';
-import HistoryScreen from '../screens/HistoryScreen';
-import SettingsScreen from '../screens/SettingsScreen';
-import RegisterScreen from '../screens/RegisterScreen';
-import BookingMenu from '../screens/BookingMenu';
+import BookingDetail from '../screens/BookingDetailScreen';
 import BookingExplanation from '../screens/BookingExplanation';
+import BookingMenu from '../screens/BookingMenu';
 import BookingServiceSelection from '../screens/BookingServiceSelect';
 import BookingSubtypeSelection from '../screens/BookingSubtypeSelect';
-import AdminDashboard from '../screens/admin/AdminDashboard';
-import AdminUsers from '../screens/admin/AdminUsers';
-import AdminBookingList from '../screens/admin/AdminBookingList';
-import AdminSettings from '../screens/admin/AdminSettings';
-import AddressSearchScreen from '../screens/AddressSearchScreen';
-import BookingDetail from '../screens/BookingDetailScreen';
-
-const API = process.env.SERVER_API;
+import HistoryScreen from '../screens/HistoryScreen';
+import HomeScreen from '../screens/HomeScreen';
+import LoginScreen from '../screens/LoginScreen';
+import RegisterScreen from '../screens/RegisterScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import { colors, fonts, spacing } from '../theme/tokens';
 
 export interface AssetPart {
   partId?: string;
@@ -30,28 +34,26 @@ export interface AssetPart {
 }
 
 export interface Tier {
+  id?: string;
+  _id?: string;
   tier: string;
   price: number;
   memo: string;
   assets: {
     blueprint?: string | null;
-    parts: {
-      partId?: string;
-      label?: string;
-      url: string;
-    }[];
+    parts: AssetPart[];
   };
 }
 
-/** Extra add-ons a customer can pick */
 export interface Choice {
   label: string;
   value: string;
   extraCost: number;
 }
+
 export interface Option {
   _id: string;
-  key: string; 
+  key: string;
   label: string;
   choices: Choice[];
 }
@@ -68,7 +70,7 @@ export interface Subtype {
   _id: string;
   name: string;
   iconUrl?: string;
-  category: {_id: string; name: string;} | string;
+  category: { _id: string; name: string } | string;
   serviceOptions: ServiceType[];
 }
 
@@ -89,99 +91,136 @@ export interface BookingPayload {
   symptom?: string;
 }
 
-// Explicitly type the RootStackParamList
+export type AddressReturnRoute = 'Register' | 'Settings' | 'AdminSettings';
+
+type AddressResultParams = {
+  selectedAddress?: string;
+  selectedAddressDetail?: string;
+};
+
 export type RootStackParamList = {
-  Login: undefined;
-  Register: { isGuest?: boolean } | undefined;
+  Login: { notice?: string } | undefined;
+  Register: ({ isGuest?: boolean } & AddressResultParams) | undefined;
   Home: { isGuest?: boolean } | undefined;
-  Confirm: {serviceType: ServiceType; subtype: Subtype, tier: Tier; selectedOptions: SelectedOption[];};
+  Confirm: {
+    serviceType: ServiceType;
+    subtype: Subtype;
+    tier: Tier;
+    selectedOptions: SelectedOption[];
+    symptom?: string;
+    isPreview?: boolean;
+  };
   History: undefined;
-  Settings: undefined;
-  BookingMenu: { isGuest?: boolean };
-  BookingExplanation: { subtype: Subtype; serviceType: ServiceType };
+  Settings: AddressResultParams | undefined;
+  BookingMenu: { isGuest?: boolean } | undefined;
+  BookingExplanation: { subtype: Subtype; serviceType: ServiceType; isPreview?: boolean };
   BookingServiceSelection: { category: string } | undefined;
-  BookingSubtypeSelection: { category?: string; selectedServiceType: string};
-  AddressSearchScreen: { onSelect: (addr: string) => void } | undefined;
+  BookingSubtypeSelection: {
+    category?: string;
+    selectedServiceType: string;
+    isPreview?: boolean;
+  };
+  AddressSearchScreen: { returnTo: AddressReturnRoute };
   AdminDashboard: undefined;
   AdminUsers: undefined;
   AdminBookings: undefined;
-  AdminSettings: undefined;
-  BookingDetail: { bookingId: string };
+  AdminSettings: AddressResultParams | undefined;
+  BookingDetail: { bookingId: string; viewMode?: 'customer' | 'admin' };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const AppNavigator = () => {
-  const { token, isLoading, isGuestMode } = useAuth();
-  const [user, setUser] = useState<{ isAdmin: boolean; isGuest: boolean } | null>(null);
-  const [userLoading, setUserLoading] = useState(true);
+const navigationTheme: Theme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: colors.primary,
+    background: colors.background,
+    card: colors.surface,
+    text: colors.text,
+    border: colors.borderSoft,
+    notification: colors.danger,
+  },
+};
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await axios.get(`${API}/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setUser(res.data);
-      } catch (err) {
-        console.log('Error fetching user:', err);
-      } finally {
-        setUserLoading(false);
-      }
-    };
+function LoadingScreen() {
+  return (
+    <View style={styles.loading} accessibilityRole="progressbar" accessibilityLabel="앱 준비 중">
+      <Brand />
+      <ActivityIndicator size="large" color={colors.primary} style={styles.spinner} />
+      <Text style={styles.loadingText}>안전하게 정보를 불러오고 있어요</Text>
+    </View>
+  );
+}
 
-    if (token) {
-      fetchUser();
-    } else {
-      setUserLoading(false);
-    }
-  }, [token]);
+export default function AppNavigator() {
+  const { token, currentUser, isLoading } = useAuth();
 
-  if (isLoading || userLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
+  if (isLoading) return <LoadingScreen />;
 
-  let screens: React.ReactElement[] = [];
-
-  if (token && user?.isAdmin) {
-    screens = [
-      <Stack.Screen key="AdminDashboard" name="AdminDashboard" component={AdminDashboard} />,
-      <Stack.Screen key="AdminUsers" name="AdminUsers" component={AdminUsers} />,
-      <Stack.Screen key="AdminBookings" name="AdminBookings" component={AdminBookingList} />,
-      <Stack.Screen key="AdminSettings" name="AdminSettings" component={AdminSettings} />,
-      <Stack.Screen key="AddressSearchScreen" name="AddressSearchScreen" component={AddressSearchScreen} />,
-      <Stack.Screen key="BookingDetail" name="BookingDetail" component={BookingDetail} />
-    ];
-  } else {
-    screens = [
-      <Stack.Screen key="Login" name="Login" component={LoginScreen} />,
-      <Stack.Screen key="Register" name="Register" component={RegisterScreen} />,
-      <Stack.Screen key="Home" name="Home" component={HomeScreen} />,
-      <Stack.Screen key="Confirm" name="Confirm" component={BookingConfirm} />,
-      <Stack.Screen key="History" name="History" component={HistoryScreen} />,
-      <Stack.Screen key="Settings" name="Settings" component={SettingsScreen} />,
-      <Stack.Screen key="BookingMenu" name="BookingMenu" component={BookingMenu} />,
-      <Stack.Screen key="BookingExplanation" name="BookingExplanation" component={BookingExplanation} />,
-      <Stack.Screen key="BookingServiceSelection" name="BookingServiceSelection" component={BookingServiceSelection} />,
-      <Stack.Screen key="BookingSubtypeSelection" name="BookingSubtypeSelection" component={BookingSubtypeSelection} />,
-      <Stack.Screen key="AddressSearchScreen" name="AddressSearchScreen" component={AddressSearchScreen} />,
-      <Stack.Screen key="BookingDetail" name="BookingDetail" component={BookingDetail} />
-    ];
-  }
+  const isAdmin = Boolean(token && currentUser?.isAdmin);
+  const isSignedIn = Boolean(token);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator
         id={undefined}
-        screenOptions={{ headerShown: false }}
+        initialRouteName={isAdmin ? 'AdminDashboard' : isSignedIn ? 'Home' : 'Login'}
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          contentStyle: { backgroundColor: colors.background },
+        }}
       >
-        {screens}
+        {isAdmin ? (
+          <Stack.Group navigationKey="admin">
+            <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
+            <Stack.Screen name="AdminUsers" component={AdminUsers} />
+            <Stack.Screen name="AdminBookings" component={AdminBookingList} />
+            <Stack.Screen name="AdminSettings" component={AdminSettings} />
+            <Stack.Screen name="BookingDetail" component={BookingDetail} />
+            <Stack.Screen name="AddressSearchScreen" component={AddressSearchScreen} />
+          </Stack.Group>
+        ) : (
+          <Stack.Group navigationKey={isSignedIn ? 'customer' : 'preview'}>
+            {!isSignedIn ? (
+              <>
+                <Stack.Screen name="Login" component={LoginScreen} />
+                <Stack.Screen name="Register" component={RegisterScreen} />
+              </>
+            ) : null}
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="BookingMenu" component={BookingMenu} />
+            <Stack.Screen name="BookingServiceSelection" component={BookingServiceSelection} />
+            <Stack.Screen name="BookingSubtypeSelection" component={BookingSubtypeSelection} />
+            <Stack.Screen name="BookingExplanation" component={BookingExplanation} />
+            <Stack.Screen name="Confirm" component={BookingConfirm} />
+            <Stack.Screen name="History" component={HistoryScreen} />
+            <Stack.Screen name="BookingDetail" component={BookingDetail} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="AddressSearchScreen" component={AddressSearchScreen} />
+          </Stack.Group>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
-export default AppNavigator;
+
+const styles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  spinner: {
+    marginTop: spacing.xxl,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+});

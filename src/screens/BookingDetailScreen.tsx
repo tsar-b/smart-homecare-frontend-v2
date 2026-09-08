@@ -260,11 +260,25 @@ function BookingDetailScreen() {
   const viewerControllerRef = useRef<AbortController | null>(null);
 
   useEffect(
-    () => () => {
-      uploadControllerRef.current?.abort();
-      viewerControllerRef.current?.abort();
+    () => {
+      // Navigation may reuse this screen for another booking. Local files belong
+      // only to the booking for which they were selected.
+      setLocalMedia([]);
+      setLocalMediaUploadState({});
+      setUploadingMedia(false);
+      setViewerVisible(false);
+      setViewerAttachment(null);
+      setViewerUrl(null);
+      setViewerLoading(false);
+      setViewerError(null);
+      return () => {
+        uploadControllerRef.current?.abort();
+        uploadControllerRef.current = null;
+        viewerControllerRef.current?.abort();
+        viewerControllerRef.current = null;
+      };
     },
-    [],
+    [bookingId, isAdminView],
   );
 
   useEffect(() => {
@@ -280,6 +294,7 @@ function BookingDetailScreen() {
       }
 
       setLoading(true);
+      setDetail(null);
       setError(null);
       setCancelError(null);
       setAdminActionError(null);
@@ -393,6 +408,7 @@ function BookingDetailScreen() {
         !detail ||
         !CANCELLABLE_STATUSES.has(detail.status) ||
         deletingAttachmentId ||
+        completingAttachmentId ||
         cancelling ||
         uploadingMedia
       ) {
@@ -434,6 +450,7 @@ function BookingDetailScreen() {
       bookingId,
       cancelling,
       closeViewer,
+      completingAttachmentId,
       deletingAttachmentId,
       detail,
       isAdminView,
@@ -451,6 +468,8 @@ function BookingDetailScreen() {
         attachment.status !== 'pending' ||
         !CANCELLABLE_STATUSES.has(detail.status) ||
         cancelling ||
+        uploadingMedia ||
+        deletingAttachmentId ||
         completingAttachmentId
       ) {
         return;
@@ -485,7 +504,7 @@ function BookingDetailScreen() {
         setCompletingAttachmentId(null);
       }
     },
-    [api, bookingId, cancelling, completingAttachmentId, detail, isAdminView],
+    [api, bookingId, cancelling, completingAttachmentId, deletingAttachmentId, detail, isAdminView, uploadingMedia],
   );
 
   const uploadLocalMedia = useCallback(async () => {
@@ -496,6 +515,8 @@ function BookingDetailScreen() {
       !CANCELLABLE_STATUSES.has(detail.status) ||
       cancelling ||
       uploadingMedia ||
+      completingAttachmentId ||
+      deletingAttachmentId ||
       localMedia.length === 0
     ) {
       return;
@@ -512,6 +533,7 @@ function BookingDetailScreen() {
 
     try {
       for (const item of localMedia) {
+        if (controller.signal.aborted) return;
         const previousUpload = localMediaUploadState[item.clientAttachmentId];
         if (previousUpload?.retryable === false) {
           failedUploads += 1;
@@ -534,6 +556,7 @@ function BookingDetailScreen() {
             resumeCompletionForAttachmentId: previousUpload?.attachmentId,
             storagePreviouslyUploaded: previousUpload?.storageUploaded,
             onIntentCreated: (intent) => {
+              if (controller.signal.aborted) return;
               setLocalMediaUploadState((current) => ({
                 ...current,
                 [item.clientAttachmentId]: {
@@ -544,6 +567,7 @@ function BookingDetailScreen() {
               }));
             },
             onStorageUploaded: (intent) => {
+              if (controller.signal.aborted) return;
               setLocalMediaUploadState((current) => ({
                 ...current,
                 [item.clientAttachmentId]: {
@@ -555,6 +579,7 @@ function BookingDetailScreen() {
               }));
             },
             onProgress: (progress) => {
+              if (controller.signal.aborted) return;
               setLocalMediaUploadState((current) => ({
                 ...current,
                 [item.clientAttachmentId]: {
@@ -567,6 +592,7 @@ function BookingDetailScreen() {
             },
           });
 
+          if (controller.signal.aborted) return;
           completedUploads += 1;
           setAttachments((current) => [
             ...current.filter(
@@ -587,6 +613,7 @@ function BookingDetailScreen() {
 
           if (caught instanceof ApiError && caught.code === 'ATTACHMENT_ALREADY_COMPLETE') {
             const refreshed = await api.requests.attachments.list(bookingId);
+            if (controller.signal.aborted) return;
             const completed = refreshed.find(
               (attachment) =>
                 attachment.clientAttachmentId === item.clientAttachmentId &&
@@ -634,7 +661,9 @@ function BookingDetailScreen() {
 
       if (completedUploads > 0) {
         try {
-          setAttachments(await api.requests.attachments.list(bookingId));
+          const refreshed = await api.requests.attachments.list(bookingId);
+          if (controller.signal.aborted) return;
+          setAttachments(refreshed);
         } catch {
           // Completed response data remains usable; a later page reload will
           // refresh thumbnail URLs.
@@ -658,13 +687,17 @@ function BookingDetailScreen() {
         if (message) setMediaActionError(message);
       }
     } finally {
-      if (uploadControllerRef.current === controller) uploadControllerRef.current = null;
-      setUploadingMedia(false);
+      if (uploadControllerRef.current === controller) {
+        uploadControllerRef.current = null;
+        setUploadingMedia(false);
+      }
     }
   }, [
     api,
     bookingId,
     cancelling,
+    completingAttachmentId,
+    deletingAttachmentId,
     detail,
     isAdminView,
     localMedia,
@@ -677,6 +710,7 @@ function BookingDetailScreen() {
       isAdminView ||
       !api ||
       !detail ||
+      detail.id !== bookingId ||
       cancelling ||
       !CANCELLABLE_STATUSES.has(detail.status)
     ) {
@@ -698,7 +732,7 @@ function BookingDetailScreen() {
               .cancel(bookingId)
               .then(cancelled => {
                 setDetail(current =>
-                  current
+                  current?.id === bookingId
                     ? {
                         ...current,
                         status: cancelled.status,
@@ -720,7 +754,7 @@ function BookingDetailScreen() {
 
   const updateAdminStatus = useCallback(
     (nextStatus: AdminManagedStatus) => {
-      if (!isAdminView || !api || !detail || updatingAdminStatus) return;
+      if (!isAdminView || !api || !detail || detail.id !== bookingId || updatingAdminStatus) return;
       if (normalizedAdminStatus(detail.status) === nextStatus) return;
 
       Alert.alert(
@@ -737,7 +771,7 @@ function BookingDetailScreen() {
                 .updateStatus(bookingId, { status: nextStatus })
                 .then(updated => {
                   setDetail(current =>
-                    current
+                    current?.id === bookingId
                       ? {
                           ...current,
                           status: updated.status,
@@ -762,7 +796,7 @@ function BookingDetailScreen() {
     [api, bookingId, detail, isAdminView, updatingAdminStatus],
   );
 
-  if (loading && !detail) {
+  if ((loading && !detail) || (detail !== null && detail.id !== bookingId)) {
     return (
       <AppScreen padded={false}>
         <AppHeader title={isAdminView ? '예약 관리 상세' : '예약 상세'} onBack={() => navigation.goBack()} />
@@ -901,7 +935,7 @@ function BookingDetailScreen() {
                   : undefined
               }
               onRetry={
-                canManageMedia && !cancelling
+                canManageMedia && !cancelling && !uploadingMedia && !deletingAttachmentId
                   ? (attachment) => void completePendingAttachment(attachment)
                   : undefined
               }

@@ -756,6 +756,9 @@ export function createV2Api(options: CreateV2ApiOptions = {}): V2Api {
         const response = await publicHttp.post('/api/auth/refresh', {
           refresh_token: refreshToken,
         });
+        // A refresh started by the previous account must not resurrect a
+        // logged-out session or replace a more recently signed-in account.
+        if ((await options.getRefreshToken?.())?.trim() !== refreshToken) return null;
         const session = adaptAuthSession(response.data, 'refreshResponse');
         await options.onSessionRefreshed?.(session);
         return session.accessToken;

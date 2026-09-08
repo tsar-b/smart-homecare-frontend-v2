@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -33,6 +33,8 @@ import { useAuth } from '../../context/AuthContext';
 import type { ServiceRequest } from '../../domain';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 import { colors, fonts, layout, radius, spacing } from '../../theme/tokens';
+import { LatestRequest } from '../../utils/latestRequest';
+import { parseAdminPrice } from './adminInput';
 
 type ManagedStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
@@ -133,6 +135,7 @@ export default function AdminBookingList() {
   const [selectedStatus, setSelectedStatus] = useState<ManagedStatus | null>(null);
   const [price, setPrice] = useState('');
   const [saving, setSaving] = useState(false);
+  const bookingRequest = useRef(new LatestRequest());
 
   const fetchBookings = useCallback(async () => {
     if (!api) {
@@ -146,6 +149,7 @@ export default function AdminBookingList() {
       return;
     }
 
+    const request = bookingRequest.current.start();
     setLoading(true);
     setError(null);
     try {
@@ -156,21 +160,24 @@ export default function AdminBookingList() {
         sort: 'reservation_date',
         direction: 'desc' as const,
       };
-      const firstPage = await api.admin.list('requests', { ...baseQuery, page: 1 });
+      const firstPage = await api.admin.list('requests', { ...baseQuery, page: 1 }, { signal: request.signal });
+      if (!request.isCurrent()) return;
       const allRequests = [...firstPage.data];
       const pageCount = Math.ceil(firstPage.total / firstPage.pageSize);
 
       for (let page = 2; page <= pageCount; page += 1) {
-        const nextPage = await api.admin.list('requests', { ...baseQuery, page });
+        const nextPage = await api.admin.list('requests', { ...baseQuery, page }, { signal: request.signal });
+        if (!request.isCurrent()) return;
         allRequests.push(...nextPage.data);
       }
 
       setBookings(allRequests);
     } catch (requestError) {
+      if (!request.isCurrent()) return;
       console.error('fetchBookings error', requestError);
       setError('예약 목록을 불러오지 못했습니다.');
     } finally {
-      setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
   }, [api, endDate, startDate]);
 
@@ -178,6 +185,7 @@ export default function AdminBookingList() {
     if (isFocused) {
       void fetchBookings();
     }
+    return () => bookingRequest.current.cancel();
     // Date changes are applied only when the administrator presses search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, isFocused]);
@@ -209,19 +217,17 @@ export default function AdminBookingList() {
   };
 
   const saveStatus = async () => {
-    if (!editing || !selectedStatus || !api) return;
+    if (!editing || !selectedStatus || !api || saving) return;
 
     const payload: { status: string; totalPrice?: number } = {
       status: selectedStatus,
     };
-    const normalizedPrice = price.replace(/[,_\s]/g, '');
-    if (normalizedPrice) {
-      const parsedPrice = Number.parseInt(normalizedPrice, 10);
-      if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
-        Alert.alert('가격 확인', '총액은 0 이상의 숫자로 입력해 주세요.');
-        return;
-      }
-      payload.totalPrice = parsedPrice;
+    try {
+      const parsedPrice = parseAdminPrice(price);
+      if (parsedPrice !== undefined) payload.totalPrice = parsedPrice;
+    } catch {
+      Alert.alert('가격 확인', '총액은 0 이상의 정수로 입력해 주세요.');
+      return;
     }
 
     setSaving(true);
@@ -262,13 +268,17 @@ export default function AdminBookingList() {
   };
 
   const copyAddress = async (address: string) => {
-    await Clipboard.setStringAsync(address);
-    Toast.show({
-      type: 'success',
-      text1: '주소를 복사했습니다',
-      text2: address,
-      position: 'bottom',
-    });
+    try {
+      await Clipboard.setStringAsync(address);
+      Toast.show({
+        type: 'success',
+        text1: '주소를 복사했습니다',
+        text2: address,
+        position: 'bottom',
+      });
+    } catch {
+      Alert.alert('복사 실패', '주소를 복사하지 못했습니다. 다시 시도해 주세요.');
+    }
   };
 
   const headerAction = (

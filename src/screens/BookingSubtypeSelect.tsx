@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -42,6 +42,7 @@ import {
   Tier,
 } from '../navigation/AppNavigator';
 import { colors, fonts, radius, shadow, spacing } from '../theme/tokens';
+import { LatestRequest } from '../utils/latestRequest';
 
 const BOOKING_STEPS = ['가전 선택', '서비스 선택', '제품 종류', '상세 옵션', '일정 확인'];
 
@@ -443,7 +444,7 @@ function adaptNestedService(
   };
 }
 
-function adaptServiceForSubtype(
+export function adaptServiceForSubtype(
   catalog: AppCatalog,
   service: CatalogServiceType,
   subtype: CatalogSubtype,
@@ -460,17 +461,9 @@ function adaptServiceForSubtype(
   const options = adaptOptions(catalog, service, subtype);
 
   if (tiers.length === 0) {
-    // V1 deliberately kept explicitly supported, unpriced pairs bookable as a
-    // quote request. Never forward a nested numeric price without a normalized
-    // pricing ID: the V2 server would otherwise charge a different total.
-    tiers = [
-      {
-        tier: 'standard',
-        price: -1,
-        memo: '',
-        assets: { blueprint: null, parts: [] },
-      },
-    ];
+    // Canonical V2 requires a normalized pricing ID even for a consultation
+    // quote (-1). Do not send users through a synthetic tier that cannot submit.
+    return null;
   } else if (nestedService) {
     tiers = tiers.map(tier => {
       const nestedTier = nestedService.tiers.find(item => item.tier === tier.tier);
@@ -542,8 +535,10 @@ export default function BookingSubtypeSelect() {
   const [subtypes, setSubtypes] = useState<Subtype[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const readRequest = useRef(new LatestRequest());
 
-  const loadSubtypes = useCallback(async (signal?: AbortSignal) => {
+  const loadSubtypes = useCallback(async () => {
+    const request = readRequest.current.start();
     setLoading(true);
     setError(null);
 
@@ -561,8 +556,8 @@ export default function BookingSubtypeSelect() {
     }
 
     try {
-      const initialization = await api.catalog.initialize(signal ? { signal } : undefined);
-      if (signal?.aborted) return;
+      const initialization = await api.catalog.initialize({ signal: request.signal });
+      if (!request.isCurrent()) return;
 
       const { catalog } = initialization;
       const selectedService = catalog.serviceTypes.find(
@@ -593,29 +588,29 @@ export default function BookingSubtypeSelect() {
 
       setSubtypes(filtered);
     } catch (loadError) {
-      if (signal?.aborted) return;
+      if (!request.isCurrent()) return;
       console.error('Failed to load subtypes:', loadError);
       setSubtypes([]);
       setError('제품 종류를 불러오지 못했습니다.');
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
   }, [api, category, previewMode, selectedServiceType]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadSubtypes(controller.signal);
-    return () => controller.abort();
+    void loadSubtypes();
+    return () => readRequest.current.cancel();
   }, [loadSubtypes]);
 
   const handleBack = () =>
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'BookingServiceSelection', params: { category } }],
-    });
+    navigation.canGoBack()
+      ? navigation.goBack()
+      : navigation.replace('BookingServiceSelection', { category });
 
   const handleSelect = (subtype: Subtype) => {
-    const service = subtype.serviceOptions.find(option => option.name === selectedServiceType);
+    const service = subtype.serviceOptions.find(option =>
+      option._id === selectedServiceType || option.name === selectedServiceType || option.label === selectedServiceType,
+    );
 
     if (!service) {
       Alert.alert('오류', `${selectedServiceType} 서비스는 이 기기에서 지원되지 않습니다.`);

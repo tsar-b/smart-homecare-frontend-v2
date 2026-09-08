@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 import type { BookingAttachment } from '../domain';
@@ -17,7 +17,56 @@ interface BookingMediaViewerProps {
 
 function VideoContent({ url }: { readonly url: string }) {
   const player = useVideoPlayer(url);
-  return <VideoView player={player} style={styles.media} nativeControls contentFit="contain" />;
+  const [status, setStatus] = useState(player.status);
+  useEffect(() => {
+    const subscription = player.addListener('statusChange', (event) => setStatus(event.status));
+    setStatus(player.status);
+    return () => subscription.remove();
+  }, [player]);
+  if (status === 'error') return <MediaLoadError />;
+  return (
+    <View style={styles.media}>
+      <VideoView player={player} style={styles.media} nativeControls contentFit="contain" />
+      {status === 'loading' || status === 'idle' ? (
+        <View style={styles.loadingOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color={colors.white} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function MediaLoadError() {
+  return (
+    <View style={styles.center} accessibilityRole="alert">
+      <Ionicons name="alert-circle-outline" size={42} color={colors.white} />
+      <Text style={styles.message}>
+        파일을 불러오지 못했습니다. 네트워크를 확인한 뒤 닫고 다시 열어 주세요.
+      </Text>
+    </View>
+  );
+}
+
+function ImageContent({ url }: { readonly url: string }) {
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  if (failed) return <MediaLoadError />;
+  return (
+    <View style={styles.media}>
+      <Image
+        source={{ uri: url }}
+        style={styles.media}
+        resizeMode="contain"
+        onError={() => setFailed(true)}
+        onLoadEnd={() => setLoading(false)}
+      />
+      {loading ? (
+        <View style={styles.loadingOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color={colors.white} />
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export function BookingMediaViewer({
@@ -43,7 +92,7 @@ export function BookingMediaViewer({
           </Pressable>
         </View>
         <View style={styles.stage}>
-          {loading ? (
+          {!visible ? null : loading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={colors.white} />
               <Text style={styles.message}>안전한 보기 주소를 불러오고 있어요.</Text>
@@ -55,9 +104,9 @@ export function BookingMediaViewer({
             </View>
           ) : attachment && url ? (
             attachment.kind === 'video' ? (
-              <VideoContent url={url} />
+              <VideoContent key={url} url={url} />
             ) : (
-              <Image source={{ uri: url }} style={styles.media} resizeMode="contain" />
+              <ImageContent key={url} url={url} />
             )
           ) : null}
         </View>
@@ -73,6 +122,7 @@ const styles = StyleSheet.create({
   close: { width: layout.minTouchTarget, height: layout.minTouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)' },
   stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   center: { alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   message: { marginTop: spacing.md, textAlign: 'center', fontFamily: fonts.regular, fontSize: 15, lineHeight: 22, color: colors.white },
   pressed: { opacity: 0.72 },

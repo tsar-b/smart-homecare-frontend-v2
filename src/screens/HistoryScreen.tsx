@@ -3,7 +3,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import dayjs from 'dayjs';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Platform,
@@ -29,6 +29,7 @@ import { useAuth } from '../context/AuthContext';
 import type { AppCatalog, ServiceRequest } from '../domain';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { colors, fonts, layout, radius, spacing } from '../theme/tokens';
+import { LatestRequest } from '../utils/latestRequest';
 
 type HistoryNavigation = NativeStackNavigationProp<RootStackParamList, 'History'>;
 type DateField = 'start' | 'end';
@@ -81,9 +82,11 @@ function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const historyRequest = useRef(new LatestRequest());
 
   const loadHistory = useCallback(
-    async (signal?: AbortSignal, refresh = false) => {
+    async (refresh = false) => {
+      const request = historyRequest.current.start();
       if (!api) {
         setError(configurationError ?? '서버 연결 설정이 필요합니다.');
         setLoading(false);
@@ -96,17 +99,21 @@ function HistoryScreen() {
 
       try {
         const [history, initialization] = await Promise.all([
-          api.requests.list({ signal }),
-          api.catalog.initialize({ signal }).catch(() => null),
+          api.requests.list({ signal: request.signal }),
+          api.catalog.initialize({ signal: request.signal }).catch(() => null),
         ]);
+        if (!request.isCurrent()) return;
         setRequests(history);
         if (initialization) setCatalog(initialization.catalog);
       } catch (caught) {
+        if (!request.isCurrent()) return;
         const message = historyErrorMessage(caught);
         if (message) setError(message);
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (request.isCurrent()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [api, configurationError],
@@ -114,9 +121,8 @@ function HistoryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const controller = new AbortController();
-      void loadHistory(controller.signal);
-      return () => controller.abort();
+      void loadHistory();
+      return () => historyRequest.current.cancel();
     }, [loadHistory]),
   );
 
@@ -338,7 +344,7 @@ function HistoryScreen() {
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
-                onRefresh={() => void loadHistory(undefined, true)}
+                onRefresh={() => void loadHistory(true)}
                 tintColor={colors.primary}
                 colors={[colors.primary]}
               />

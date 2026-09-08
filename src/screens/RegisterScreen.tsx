@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
@@ -13,14 +13,17 @@ import {
   PageIntro,
 } from '../components';
 import { customerSafeErrorMessage } from '../api';
+import { createSubmissionLock } from '../auth/submissionLock';
+import {
+  registrationPasswordError,
+  validateRegistrationFields,
+  type RegistrationFieldErrors,
+} from '../auth/validation';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
-type FieldErrors = Partial<
-  Record<'name' | 'phone' | 'email' | 'password' | 'confirm' | 'address' | 'terms', string>
->;
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11);
@@ -51,8 +54,9 @@ export default function RegisterScreen({ navigation, route }: Props) {
   );
   const [agreed, setAgreed] = useState(false);
   const [pending, setPending] = useState(false);
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const [errors, setErrors] = useState<RegistrationFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const submissionLock = useRef(createSubmissionLock());
 
   useEffect(() => {
     if (route.params?.selectedAddress !== undefined) {
@@ -68,14 +72,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
     ? '방문 예약에 필요한 최소 정보만 받습니다.'
     : '예약 확인과 주소 관리를 위한 계정을 만드세요.';
 
-  const passwordStrength = useMemo(() => {
-    if (!password) return null;
-    if (password.length < 8) return '8자 이상 입력해 주세요.';
-    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-      return '영문과 숫자를 함께 사용해 주세요.';
-    }
-    return null;
-  }, [password]);
+  const passwordStrength = useMemo(() => registrationPasswordError(password), [password]);
 
   if (isGuest) {
     return (
@@ -107,23 +104,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
   }
 
   const validate = (): boolean => {
-    const next: FieldErrors = {};
-    const phoneDigits = phone.replace(/\D/g, '');
-
-    if (name.trim().length < 2) next.name = '이름을 2자 이상 입력해 주세요.';
-    if (phoneDigits.length < 10) next.phone = '연락 가능한 전화번호를 입력해 주세요.';
-
-    if (isGuest) {
-      if (!address.trim()) next.address = '방문 주소를 선택해 주세요.';
-    } else {
-      if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-        next.email = '이메일 형식을 확인해 주세요.';
-      }
-      if (passwordStrength) next.password = passwordStrength;
-      if (password !== confirmPassword) next.confirm = '비밀번호가 서로 다릅니다.';
-    }
-
-    if (!agreed) next.terms = '서비스 이용과 개인정보 처리 동의가 필요합니다.';
+    const next = validateRegistrationFields({ name, phone, email, password, confirmPassword, agreed });
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -135,6 +116,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
       return;
     }
     if (!validate()) return;
+    if (!submissionLock.current.tryAcquire()) return;
 
     setPending(true);
     try {
@@ -163,6 +145,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
     } catch (error) {
       setFormError(toMessage(error));
     } finally {
+      submissionLock.current.release();
       setPending(false);
     }
   };
@@ -179,6 +162,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
             value={name}
             onChangeText={value => {
               setName(value);
+              setFormError(null);
               setErrors(current => ({ ...current, name: undefined }));
             }}
             placeholder="이름 입력"
@@ -193,6 +177,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
             value={phone}
             onChangeText={value => {
               setPhone(formatPhone(value));
+              setFormError(null);
               setErrors(current => ({ ...current, phone: undefined }));
             }}
             placeholder="010-0000-0000"
@@ -210,6 +195,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
                 value={email}
                 onChangeText={value => {
                   setEmail(value);
+                  setFormError(null);
                   setErrors(current => ({ ...current, email: undefined }));
                 }}
                 placeholder="name@example.com"
@@ -226,7 +212,8 @@ export default function RegisterScreen({ navigation, route }: Props) {
                 value={password}
                 onChangeText={value => {
                   setPassword(value);
-                  setErrors(current => ({ ...current, password: undefined }));
+                  setFormError(null);
+                  setErrors(current => ({ ...current, password: undefined, confirm: undefined }));
                 }}
                 placeholder="영문과 숫자를 포함한 8자 이상"
                 secureTextEntry
@@ -242,6 +229,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
                 value={confirmPassword}
                 onChangeText={value => {
                   setConfirmPassword(value);
+                  setFormError(null);
                   setErrors(current => ({ ...current, confirm: undefined }));
                 }}
                 placeholder="비밀번호 다시 입력"
@@ -290,6 +278,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
           <Pressable
             onPress={() => {
               setAgreed(value => !value);
+              setFormError(null);
               setErrors(current => ({ ...current, terms: undefined }));
             }}
             accessibilityRole="checkbox"

@@ -24,6 +24,7 @@ import type {
   RegistrationResult,
   UserProfile,
 } from '../domain';
+import { createSessionTaskQueue } from '../auth/sessionTaskQueue';
 
 const SESSION_KEY = 'shc.session';
 const TOKEN_KEY = 'shc.accessToken';
@@ -181,8 +182,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const tokenRef = useRef<string | null>(null);
   const refreshTokenRef = useRef<string | null>(null);
   const sessionRef = useRef<AuthSession | null>(null);
+  const sessionGeneration = useRef(0);
+  const storageQueue = useRef(createSessionTaskQueue());
 
   const clearSession = useCallback(async () => {
+    sessionGeneration.current += 1;
     tokenRef.current = null;
     refreshTokenRef.current = null;
     sessionRef.current = null;
@@ -190,21 +194,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(null);
     setGuestId(null);
     setIsGuestMode(false);
-    await Promise.all([removeStoredSession(), AsyncStorage.removeItem(GUEST_ID_KEY)]);
+    await storageQueue.current.run(async () => {
+      await Promise.all([removeStoredSession(), AsyncStorage.removeItem(GUEST_ID_KEY)]);
+    });
   }, []);
 
-  const activateSession = useCallback(async (session: AuthSession): Promise<ClientUser> => {
+  const activateSession = useCallback(async (
+    session: AuthSession,
+    generation = sessionGeneration.current,
+  ): Promise<void> => {
     // Persistence is the commit point: never expose a session that would be
     // lost on the next launch if SecureStore/sessionStorage rejects the write.
-    await storeSession(session);
-    sessionRef.current = session;
-    tokenRef.current = session.accessToken;
-    refreshTokenRef.current = session.refreshToken;
-    setTokenState(session.accessToken);
-    setCurrentUser(session.user);
-    setIsGuestMode(session.user.isGuest);
-    setSessionError(null);
-    return session.user;
+    await storageQueue.current.run(async () => {
+      if (generation !== sessionGeneration.current) return;
+      await storeSession(session);
+      if (generation !== sessionGeneration.current) return;
+      // Commit refs inside the queue so the next profile save sees these tokens.
+      sessionRef.current = session;
+      tokenRef.current = session.accessToken;
+      refreshTokenRef.current = session.refreshToken;
+      setTokenState(session.accessToken);
+      setCurrentUser(session.user);
+      setIsGuestMode(session.user.isGuest);
+      setSessionError(null);
+    });
   }, []);
 
   const apiResult = useMemo(() => {
@@ -242,26 +255,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = useCallback(async (): Promise<ClientUser | null> => {
     const api = requireApi();
+    const generation = sessionGeneration.current;
     try {
       const profile = await api.profile.get();
-      setCurrentUser(profile);
-      setIsGuestMode(profile.isGuest);
-      const activeSession = sessionRef.current;
-      if (activeSession) {
-        const updatedSession = { ...activeSession, user: profile };
-        await storeSession(updatedSession);
-        sessionRef.current = updatedSession;
-      }
-      setSessionError(null);
-      return profile;
+      if (generation !== sessionGeneration.current) return null;
+      return await storageQueue.current.run(async () => {
+        if (generation !== sessionGeneration.current) return null;
+        // Read the current credentials only after earlier refresh writes commit.
+        const activeSession = sessionRef.current;
+        if (activeSession) {
+          const updatedSession = { ...activeSession, user: profile };
+          await storeSession(updatedSession);
+          if (generation !== sessionGeneration.current) return null;
+          sessionRef.current = updatedSession;
+        }
+        setCurrentUser(profile);
+        setIsGuestMode(profile.isGuest);
+        setSessionError(null);
+        return profile;
+      });
     } catch (error) {
-      setSessionError(errorMessage(error));
+      if (generation === sessionGeneration.current) setSessionError(errorMessage(error));
       throw error;
     }
   }, [requireApi]);
 
   useEffect(() => {
     let active = true;
+    const generation = sessionGeneration.current;
 
     const initialize = async () => {
       try {
@@ -269,8 +290,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           readStoredSession(),
           AsyncStorage.getItem(GUEST_ID_KEY),
         ]);
-        if (!active) return;
+        if (!active || generation !== sessionGeneration.current) return;
 
+        // Keep saved credentials untouched when configuration is missing, but do
+        // not expose a cached customer/admin session in unauthenticated preview.
+        if (!apiResult.api) return;
         setGuestId(storedGuest);
         setIsGuestMode(Boolean(storedGuest));
 
@@ -294,24 +318,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (apiResult.api) {
             try {
-              const profile = await apiResult.api.profile.get();
-              if (!active) return;
-              setCurrentUser(profile);
-              setIsGuestMode(profile.isGuest);
-              if (sessionRef.current) {
-                const updatedSession = { ...sessionRef.current, user: profile };
-                await storeSession(updatedSession);
-                sessionRef.current = updatedSession;
-              }
-              setSessionError(null);
+              await refreshProfile();
             } catch (error) {
-              if (!active) return;
+              if (!active || generation !== sessionGeneration.current) return;
               setSessionError(errorMessage(error));
             }
           }
         }
       } catch (error) {
-        if (active) setSessionError(errorMessage(error));
+        if (active && generation === sessionGeneration.current) setSessionError(errorMessage(error));
       } finally {
         if (active) setIsLoading(false);
       }
@@ -321,7 +336,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       active = false;
     };
-  }, [apiResult.api]);
+  }, [apiResult.api, refreshProfile]);
 
   const setToken = useCallback(
     async (nextToken: string | null) => {
@@ -329,17 +344,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await clearSession();
         return;
       }
-      await storeLegacyAccessToken(nextToken);
+      const generation = ++sessionGeneration.current;
+      const saved = await storageQueue.current.run(async () => {
+        if (generation !== sessionGeneration.current) return false;
+        await storeLegacyAccessToken(nextToken);
+        return generation === sessionGeneration.current;
+      });
+      if (!saved) return;
       sessionRef.current = null;
       refreshTokenRef.current = null;
       tokenRef.current = nextToken;
       setTokenState(nextToken);
+      setCurrentUser(null);
+      setGuestId(null);
+      setIsGuestMode(false);
     },
     [clearSession],
   );
 
   const registerAccount = useCallback(
     async (input: RegisterAccountInput) => {
+      const generation = ++sessionGeneration.current;
+      setSessionError(null);
       const result = await requireApi().auth.register(input);
       if (result.accessToken && result.refreshToken && result.user) {
         await activateSession({
@@ -348,7 +374,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           expiresAt: result.expiresAt,
           expiresIn: result.expiresIn,
           user: result.user,
-        });
+        }, generation);
       }
       return result;
     },
@@ -357,11 +383,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginEmail = useCallback(
     async (email: string, password: string) => {
+      const generation = ++sessionGeneration.current;
+      setSessionError(null);
       const session = await requireApi().auth.login({
         email: email.trim().toLowerCase(),
         password,
       });
-      await activateSession(session);
+      await activateSession(session, generation);
     },
     [activateSession, requireApi],
   );

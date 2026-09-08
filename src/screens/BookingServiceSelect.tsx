@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import type { CatalogServiceType, CatalogSubtype, JsonValue } from '../domain';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors, fonts, radius, shadow, spacing } from '../theme/tokens';
+import { LatestRequest } from '../utils/latestRequest';
 
 const BOOKING_STEPS = ['가전 선택', '서비스 선택', '제품 종류', '상세 옵션', '일정 확인'];
 
@@ -119,8 +120,10 @@ export default function BookingServiceSelect() {
   const [services, setServices] = useState<readonly CatalogServiceType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const readRequest = useRef(new LatestRequest());
 
-  const loadServices = useCallback(async (signal?: AbortSignal) => {
+  const loadServices = useCallback(async () => {
+    const request = readRequest.current.start();
     setLoading(true);
     setError(null);
 
@@ -138,8 +141,8 @@ export default function BookingServiceSelect() {
     }
 
     try {
-      const initialization = await api.catalog.initialize(signal ? { signal } : undefined);
-      if (signal?.aborted) return;
+      const initialization = await api.catalog.initialize({ signal: request.signal });
+      if (!request.isCurrent()) return;
 
       const { catalog } = initialization;
       const categoryRow = category
@@ -176,23 +179,22 @@ export default function BookingServiceSelect() {
 
       setServices(filteredServices);
     } catch (loadError) {
-      if (signal?.aborted) return;
+      if (!request.isCurrent()) return;
       console.error('Failed to load service types:', loadError);
       setServices([]);
       setError('서비스 목록을 불러오지 못했습니다.');
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
   }, [api, category, isPreview]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadServices(controller.signal);
-    return () => controller.abort();
+    void loadServices();
+    return () => readRequest.current.cancel();
   }, [loadServices]);
 
   const handleBack = () =>
-    navigation.reset({ index: 0, routes: [{ name: 'BookingMenu' }] });
+    navigation.canGoBack() ? navigation.goBack() : navigation.replace('BookingMenu');
   const handleSelect = (service: CatalogServiceType) =>
     navigation.navigate('BookingSubtypeSelection', {
       ...(category ? { category } : {}),

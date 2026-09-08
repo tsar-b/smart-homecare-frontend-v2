@@ -110,9 +110,12 @@ function AddressSearchScreen() {
     setHasSearched(true);
     setError(null);
     setSelected(null);
+    setDetail('');
+    setResults([]);
 
     try {
       const response = await api.address.search(normalizedQuery, { signal: controller.signal });
+      if (controller.signal.aborted || activeSearch.current !== controller) return;
       const seen = new Set<string>();
       const unique = response.filter((item) => {
         const address = primaryAddress(item);
@@ -122,6 +125,7 @@ function AddressSearchScreen() {
       });
       setResults(unique);
     } catch (caught) {
+      if (controller.signal.aborted || activeSearch.current !== controller) return;
       const message = addressErrorMessage(caught);
       if (message) {
         setError(message);
@@ -279,6 +283,7 @@ function AddressSearchScreen() {
                 return (
                   <Pressable
                     onPress={() => {
+                      if (!picked) setDetail('');
                       setSelected(item);
                       setError(null);
                       requestAnimationFrame(() => {

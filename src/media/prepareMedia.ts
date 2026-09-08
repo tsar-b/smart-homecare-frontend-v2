@@ -62,15 +62,21 @@ function inferContentType(asset: ImagePickerAsset, kind: BookingMediaKind): stri
 }
 
 async function fileSize(uri: string, fallback?: number): Promise<number> {
-  if (typeof fallback === 'number' && Number.isFinite(fallback) && fallback > 0) return fallback;
-  if (uri.startsWith('blob:') || uri.startsWith('data:')) {
+  if (Platform.OS === 'web') {
+    if (typeof fallback === 'number' && Number.isSafeInteger(fallback) && fallback > 0) return fallback;
     throw new MediaSelectionError('선택한 파일 크기를 확인할 수 없습니다. 다른 파일을 선택해 주세요.');
   }
-  const info = await FileSystem.getInfoAsync(uri, { size: true });
-  if (!info.exists || typeof info.size !== 'number' || info.size <= 0) {
-    throw new MediaSelectionError('선택한 파일을 읽을 수 없습니다. 다시 선택해 주세요.');
+  // Picker metadata can describe the original file rather than the local copy.
+  // Storage validates the exact byte count, so stat the native file we upload.
+  try {
+    const info = await FileSystem.getInfoAsync(uri, { size: true });
+    if (info.exists && typeof info.size === 'number' && Number.isSafeInteger(info.size) && info.size > 0) {
+      return info.size;
+    }
+  } catch {
+    // Native errors can contain a private device path; show a safe message.
   }
-  return info.size;
+  throw new MediaSelectionError('선택한 파일을 읽을 수 없습니다. 다시 선택해 주세요.');
 }
 
 async function prepareImage(asset: ImagePickerAsset): Promise<LocalBookingMedia> {
@@ -181,6 +187,9 @@ export function validateCombinedMedia(
   additions: readonly MediaLimitDescriptor[],
 ): void {
   const combined = [...existing, ...additions];
+  if (combined.some((item) => !Number.isSafeInteger(item.sizeBytes) || item.sizeBytes <= 0)) {
+    throw new MediaSelectionError('첨부 파일 크기가 올바르지 않습니다. 파일을 다시 선택해 주세요.');
+  }
   if (combined.length > MAX_BOOKING_ATTACHMENTS) {
     throw new MediaSelectionError(`사진과 동영상은 합쳐서 ${MAX_BOOKING_ATTACHMENTS}개까지 첨부할 수 있습니다.`);
   }

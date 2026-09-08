@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useState } from 'react';
-import { Alert, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { BookingAttachment, LocalBookingMedia } from '../domain';
 import {
   BOOKING_MEDIA_PILOT_UPLOADS_ENABLED,
   MAX_BOOKING_ATTACHMENTS,
+  MediaSelectionError,
   formatMediaBytes,
   formatMediaDuration,
   preparePickedMedia,
@@ -49,30 +50,32 @@ export function BookingMediaPicker({
   onError,
 }: BookingMediaPickerProps) {
   const [preparing, setPreparing] = useState(false);
+  const selectingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const sourceSelectionsRef = useRef(new Map<string, string>());
+  const latestRef = useRef({ value, existingAttachments, disabled, preview, onChange, onError });
+  latestRef.current = { value, existingAttachments, disabled, preview, onChange, onError };
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const totalCount = existingAttachments.length + value.length;
   const atLimit = totalCount >= MAX_BOOKING_ATTACHMENTS;
 
   const showError = (message: string) => {
-    onError?.(message);
-    if (!onError) Alert.alert('첨부 파일을 추가할 수 없습니다', message);
+    if (!mountedRef.current) return;
+    const handler = latestRef.current.onError;
+    handler?.(message);
+    if (!handler) Alert.alert('첨부 파일을 추가할 수 없습니다', message);
   };
 
   const chooseMedia = async () => {
-    if (disabled || preview || preparing || atLimit) return;
+    if (disabled || preview || selectingRef.current || atLimit) return;
+    selectingRef.current = true;
     setPreparing(true);
     try {
-      if (Platform.OS !== 'web') {
-        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permission.granted) {
-          showError(
-            permission.canAskAgain
-              ? '사진과 동영상을 선택하려면 사진 보관함 접근을 허용해 주세요.'
-              : '기기 설정에서 Smart HomeCare의 사진 보관함 접근을 허용해 주세요.',
-          );
-          return;
-        }
-      }
-
+      // Expo's system photo picker grants access to selected assets itself.
+      // A denied/limited broad-library permission must not block that picker.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: BOOKING_MEDIA_PILOT_UPLOADS_ENABLED ? ['images', 'videos'] : ['images'],
         allowsMultipleSelection: true,
@@ -82,19 +85,36 @@ export function BookingMediaPicker({
         exif: false,
         quality: 1,
       });
-      if (result.canceled) return;
+      if (result.canceled || !mountedRef.current) return;
 
       const additions: LocalBookingMedia[] = [];
+      const newSources = new Map<string, string>();
+      const selectedIds = new Set(latestRef.current.value.map((item) => item.clientAttachmentId));
       for (const asset of result.assets) {
-        if (value.some((item) => item.uri === asset.uri)) continue;
-        additions.push(await preparePickedMedia(asset));
+        if (!mountedRef.current || latestRef.current.disabled || latestRef.current.preview) return;
+        const source = asset.assetId ? `asset:${asset.assetId}` : `uri:${asset.uri}`;
+        const priorSelection = sourceSelectionsRef.current.get(source);
+        if (
+          newSources.has(source) ||
+          (priorSelection && selectedIds.has(priorSelection)) ||
+          latestRef.current.value.some((item) => item.uri === asset.uri)
+        ) continue;
+        const prepared = await preparePickedMedia(asset);
+        additions.push(prepared);
+        newSources.set(source, prepared.clientAttachmentId);
       }
-      validateCombinedMedia([...existingAttachments, ...value], additions);
-      onChange([...value, ...additions]);
+      if (!mountedRef.current || latestRef.current.disabled || latestRef.current.preview) return;
+      const current = latestRef.current;
+      validateCombinedMedia([...current.existingAttachments, ...current.value], additions);
+      if (additions.length > 0) {
+        current.onChange([...current.value, ...additions]);
+        for (const [source, id] of newSources) sourceSelectionsRef.current.set(source, id);
+      }
     } catch (error) {
-      showError(error instanceof Error ? error.message : '선택한 파일을 준비하지 못했습니다.');
+      showError(error instanceof MediaSelectionError ? error.message : '선택한 파일을 준비하지 못했습니다. 다시 선택해 주세요.');
     } finally {
-      setPreparing(false);
+      selectingRef.current = false;
+      if (mountedRef.current) setPreparing(false);
     }
   };
 

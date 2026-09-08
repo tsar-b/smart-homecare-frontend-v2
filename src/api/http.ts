@@ -1,7 +1,7 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 
 import type { ApiRuntimeConfig } from './config';
-import { normalizeApiError, type ApiError } from './errors';
+import { normalizeApiError, ApiError } from './errors';
 
 export type AccessTokenProvider = () =>
   | string
@@ -63,7 +63,7 @@ export function createHttpClient(
       'Content-Type': 'application/json',
     },
   });
-  let refreshPromise: Promise<string | null | undefined> | null = null;
+  const refreshPromises = new Map<string, Promise<string | null | undefined>>();
 
   if (authenticated) {
     client.interceptors.request.use(async (request) => {
@@ -82,6 +82,19 @@ export function createHttpClient(
         ? (error.config as RetryableRequestConfig | undefined)
         : undefined;
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const requestToken = failedRequest?.headers.get('Authorization');
+      const sessionStillMatches = async () => {
+        const currentToken = (await authenticated?.getAccessToken())?.trim();
+        return Boolean(currentToken && requestToken === `Bearer ${currentToken}`);
+      };
+      const cancelled = () => new ApiError({ code: 'REQUEST_CANCELLED', message: 'Request was cancelled' });
+
+      if (failedRequest?.signal?.aborted) return Promise.reject(cancelled());
+      // A late response from a logged-out/replaced account cannot invalidate
+      // or replay a request using the new account's credentials.
+      if (status === 401 && authenticated && !(await sessionStillMatches())) {
+        return Promise.reject(normalizeApiError(error));
+      }
 
       if (
         status === 401 &&
@@ -92,17 +105,26 @@ export function createHttpClient(
         failedRequest._shcRefreshAttempted = true;
         let refreshedToken: string | null | undefined;
         try {
+          const refreshKey = String(requestToken);
+          let refreshPromise = refreshPromises.get(refreshKey);
           if (!refreshPromise) {
             refreshPromise = Promise.resolve(authenticated.refreshAccessToken()).finally(() => {
-              refreshPromise = null;
+              if (refreshPromises.get(refreshKey) === refreshPromise) refreshPromises.delete(refreshKey);
             });
+            refreshPromises.set(refreshKey, refreshPromise);
           }
           refreshedToken = (await refreshPromise)?.trim();
-        } catch {
-          // A failed refresh falls through to the original 401 and clears the
-          // unusable local session below.
+        } catch (refreshError) {
+          const refreshFailure = normalizeApiError(refreshError);
+          // Offline/timeout/rate-limit/server failures do not establish that
+          // the refresh token is invalid. Preserve the session for retry.
+          if (refreshFailure.status !== 401) return Promise.reject(refreshFailure);
         }
+        if (failedRequest.signal?.aborted) return Promise.reject(cancelled());
         if (refreshedToken) {
+          if ((await authenticated.getAccessToken())?.trim() !== refreshedToken) {
+            return Promise.reject(normalizeApiError(error));
+          }
           failedRequest.headers.set('Authorization', `Bearer ${refreshedToken}`);
           // Keep replay outside the refresh catch. A cancellation or transient
           // failure after a successful refresh must reject as itself instead
@@ -112,7 +134,7 @@ export function createHttpClient(
       }
 
       const normalized = normalizeApiError(error);
-      if (normalized.status === 401 && authenticated?.onUnauthorized) {
+      if (normalized.status === 401 && authenticated?.onUnauthorized && await sessionStillMatches()) {
         try {
           await authenticated.onUnauthorized(normalized);
         } catch {

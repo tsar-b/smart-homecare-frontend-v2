@@ -29,9 +29,12 @@ export interface UploadBookingAttachmentOptions {
 }
 
 export class MediaUploadError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
+  readonly retryable: boolean;
+
+  constructor(message: string, options?: ErrorOptions & { readonly retryable?: boolean }) {
     super(message, options);
     this.name = 'MediaUploadError';
+    this.retryable = options?.retryable ?? true;
   }
 }
 
@@ -46,7 +49,26 @@ const NON_RETRYABLE_UPLOAD_CODES = new Set([
 ]);
 
 export function canRetryBookingAttachmentUpload(error: unknown): boolean {
+  if (error instanceof MediaUploadError) return error.retryable;
   return !(error instanceof ApiError && NON_RETRYABLE_UPLOAD_CODES.has(error.code));
+}
+
+async function assertLocalMediaAvailable(media: LocalBookingMedia): Promise<void> {
+  const unreadable = () => new MediaUploadError(
+    '선택한 파일이 기기에 없거나 변경되었습니다. 파일을 제거한 뒤 다시 선택해 주세요.',
+    { retryable: false },
+  );
+  if (!Number.isSafeInteger(media.sizeBytes) || media.sizeBytes <= 0) throw unreadable();
+  if (Platform.OS === 'web') {
+    if (media.webFile && media.webFile.size !== media.sizeBytes) throw unreadable();
+    return;
+  }
+  try {
+    const info = await FileSystem.getInfoAsync(media.uri, { size: true });
+    if (!info.exists || info.size !== media.sizeBytes) throw unreadable();
+  } catch {
+    throw unreadable();
+  }
 }
 
 function cancellationError(): Error {
@@ -61,6 +83,7 @@ function report(
   bytesSent: number,
   bytesTotal: number,
 ) {
+  if (options.signal?.aborted) return;
   const safeTotal = Math.max(bytesTotal, 1);
   options.onProgress?.({
     phase,
@@ -146,21 +169,33 @@ async function nativeSignedUpload(
       );
     },
   );
-  const abort = () => void task.cancelAsync();
-  options.signal?.addEventListener('abort', abort, { once: true });
-  if (options.signal?.aborted) {
-    options.signal.removeEventListener('abort', abort);
-    throw cancellationError();
-  }
-  try {
-    const result = await task.uploadAsync();
-    if (!result) throw cancellationError();
-    if (result.status < 200 || result.status >= 300) {
-      throw new MediaUploadError(`파일 업로드가 실패했습니다. (${result.status})`);
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => options.signal?.removeEventListener('abort', abort);
+    const abort = () => {
+      cleanup();
+      // Some native transports never settle uploadAsync after cancellation.
+      // Settle the caller immediately, and contain best-effort native cleanup.
+      reject(cancellationError());
+      void task.cancelAsync().catch(() => undefined);
+    };
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) {
+      abort();
+      return;
     }
-  } finally {
-    options.signal?.removeEventListener('abort', abort);
-  }
+    void task.uploadAsync().then((result) => {
+      cleanup();
+      if (options.signal?.aborted || !result) reject(cancellationError());
+      else if (result.status < 200 || result.status >= 300) {
+        reject(new MediaUploadError(`파일 업로드가 실패했습니다. (${result.status})`));
+      } else resolve();
+    }, () => {
+      cleanup();
+      reject(options.signal?.aborted
+        ? cancellationError()
+        : new MediaUploadError('파일 저장소에 연결할 수 없습니다. 다시 시도해 주세요.'));
+    });
+  });
 }
 
 async function tusUpload(
@@ -233,7 +268,12 @@ async function tusUpload(
       reject(cancellationError());
       return;
     }
-    upload.start();
+    try {
+      upload.start();
+    } catch {
+      cleanup();
+      reject(new MediaUploadError('파일 업로드를 시작하지 못했습니다. 다시 시도해 주세요.'));
+    }
   });
 }
 
@@ -304,6 +344,11 @@ export async function uploadBookingAttachment(
     throw new MediaUploadError('서버의 첨부 파일 응답이 현재 예약과 일치하지 않습니다.');
   }
   options.onIntentCreated?.(intent);
+
+  // Preserve completion recovery above even if Android has evicted the local
+  // cache file. Check bytes only when a new transfer is actually necessary.
+  await assertLocalMediaAvailable(media);
+  if (options.signal?.aborted) throw cancellationError();
 
   if (intent.uploadMethod === 'tus') {
     await tusUpload(intent, media, options);

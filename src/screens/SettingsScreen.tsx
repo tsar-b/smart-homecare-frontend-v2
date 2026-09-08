@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError } from '../api';
@@ -73,6 +73,7 @@ function SettingsScreen() {
   const [savingField, setSavingField] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [accountAction, setAccountAction] = useState<'logout' | null>(null);
+  const savingFieldRef = useRef(false);
 
   const selectedAddress = route.params?.selectedAddress;
   const selectedAddressDetail = route.params?.selectedAddressDetail;
@@ -151,18 +152,21 @@ function SettingsScreen() {
   }, [api, configurationError, navigation, selectedAddress, selectedAddressDetail]);
 
   const startEditing = (field: EditableField) => {
+    if (loading || savingFieldRef.current || savingAddress || accountAction) return;
     setEditing(field);
     setFieldError(null);
     setEditValue(field === 'name' ? profile?.name ?? '' : profile?.phone ?? '');
   };
 
   const cancelEditing = () => {
+    if (savingFieldRef.current) return;
     setEditing(null);
     setEditValue('');
     setFieldError(null);
   };
 
   const saveField = async () => {
+    if (savingFieldRef.current || savingAddress || accountAction) return;
     if (!api || !editing) {
       setFieldError(configurationError ?? '서버 연결 설정이 필요합니다.');
       return;
@@ -184,6 +188,7 @@ function SettingsScreen() {
       ? { name: trimmed }
       : { phone: phoneDigits };
 
+    savingFieldRef.current = true;
     setSavingField(true);
     setFieldError(null);
     try {
@@ -191,9 +196,12 @@ function SettingsScreen() {
       setProfile((current) => current ? { ...current, ...updated } : current);
       setEditing(null);
       setEditValue('');
+      // Keep the shared booking defaults and persisted session in sync with this edit.
+      await refreshProfile().catch(() => null);
     } catch (caught) {
       setFieldError(settingsErrorMessage(caught));
     } finally {
+      savingFieldRef.current = false;
       setSavingField(false);
     }
   };
@@ -275,6 +283,7 @@ function SettingsScreen() {
             label="이름"
             value={profile.name ?? '미등록'}
             actionLabel="변경"
+            disabled={loading || savingField || savingAddress || accountAction !== null}
             onPress={() => startEditing('name')}
           />
           {editing === 'name' ? (
@@ -294,6 +303,7 @@ function SettingsScreen() {
             label="연락처"
             value={displayPhone(profile.phone)}
             actionLabel="변경"
+            disabled={loading || savingField || savingAddress || accountAction !== null}
             onPress={() => startEditing('phone')}
           />
           {editing === 'phone' ? (
@@ -314,7 +324,7 @@ function SettingsScreen() {
             label="방문 주소"
             value={fullAddress || '미등록'}
             actionLabel={savingAddress ? '저장 중' : '변경'}
-            disabled={savingAddress}
+            disabled={loading || savingAddress || savingField || accountAction !== null}
             onPress={() => navigation.navigate('AddressSearchScreen', { returnTo: 'Settings' })}
           />
         </Card>
@@ -337,7 +347,7 @@ function SettingsScreen() {
             icon="log-out-outline"
             variant="ghost"
             loading={accountAction === 'logout'}
-            disabled={accountAction !== null}
+            disabled={accountAction !== null || savingField || savingAddress}
             onPress={() => void handleLogout()}
           />
           <Button
@@ -429,6 +439,7 @@ function EditPanel({
         onChangeText={onChange}
         error={error ?? undefined}
         keyboardType={keyboardType}
+        editable={!saving}
         autoCapitalize="none"
         returnKeyType="done"
         onSubmitEditing={onSave}

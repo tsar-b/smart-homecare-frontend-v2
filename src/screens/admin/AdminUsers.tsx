@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -24,6 +24,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import type { UserProfile } from '../../domain';
 import { colors, fonts, layout, radius, spacing } from '../../theme/tokens';
+import { LatestRequest } from '../../utils/latestRequest';
 
 function valueOrFallback(value: string | null | undefined) {
   return value?.trim() || '미등록';
@@ -36,8 +37,10 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const usersRequest = useRef(new LatestRequest());
 
   const fetchUsers = useCallback(async () => {
+    const request = usersRequest.current.start();
     if (!api) {
       setError('V2 API가 아직 설정되지 않았습니다.');
       setLoading(false);
@@ -52,7 +55,8 @@ export default function AdminUsers() {
         pageSize: 100,
         sort: 'created_at',
         direction: 'desc',
-      });
+      }, { signal: request.signal });
+      if (!request.isCurrent()) return;
       const allUsers = [...firstPage.data];
       const pageCount = Math.ceil(firstPage.total / firstPage.pageSize);
 
@@ -62,22 +66,25 @@ export default function AdminUsers() {
           pageSize: firstPage.pageSize,
           sort: 'created_at',
           direction: 'desc',
-        });
+        }, { signal: request.signal });
+        if (!request.isCurrent()) return;
         allUsers.push(...nextPage.data);
       }
 
       setUsers(allUsers);
     } catch (requestError) {
+      if (!request.isCurrent()) return;
       console.error('fetchUsers error', requestError);
       setError('사용자 목록을 불러오지 못했습니다.');
     } finally {
-      setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
   }, [api]);
 
   useFocusEffect(
     useCallback(() => {
       void fetchUsers();
+      return () => usersRequest.current.cancel();
     }, [fetchUsers]),
   );
 

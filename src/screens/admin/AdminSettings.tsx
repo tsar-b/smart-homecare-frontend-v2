@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -23,6 +23,8 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 import { colors, fonts, layout, radius, spacing } from '../../theme/tokens';
+import { selectedAddressPatch } from './adminInput';
+import { LatestRequest } from '../../utils/latestRequest';
 
 type Field = 'name' | 'phone';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -112,8 +114,12 @@ export default function AdminSettings() {
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [addressSaving, setAddressSaving] = useState(false);
+  const profileRequest = useRef(new LatestRequest());
+  const savingRef = useRef(false);
 
   const fetchMe = useCallback(async () => {
+    if (savingRef.current) return;
+    const request = profileRequest.current.start();
     if (!api) {
       setError('V2 API가 아직 설정되지 않았습니다.');
       setLoading(false);
@@ -123,7 +129,8 @@ export default function AdminSettings() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.profile.get();
+      const data = await api.profile.get({ signal: request.signal });
+      if (!request.isCurrent()) return;
       setUserInfo({
         name: data?.name ?? '',
         phone: formatPhone(data?.phone ?? ''),
@@ -131,15 +138,17 @@ export default function AdminSettings() {
         addressDetail: data?.addressDetail ?? '',
       });
     } catch (requestError) {
+      if (!request.isCurrent()) return;
       console.error('fetchAdminProfile error', requestError);
       setError('관리자 정보를 불러오지 못했습니다.');
     } finally {
-      setLoading(false);
+      if (request.isCurrent()) setLoading(false);
     }
   }, [api]);
 
   useEffect(() => {
     void fetchMe();
+    return () => profileRequest.current.cancel();
   }, [fetchMe]);
 
   const selectedAddress = route.params?.selectedAddress;
@@ -151,19 +160,19 @@ export default function AdminSettings() {
     let active = true;
 
     const saveSelectedAddress = async () => {
+      savingRef.current = true;
+      profileRequest.current.cancel();
+      setLoading(false);
       setAddressSaving(true);
       try {
-        const payload = {
-          address: selectedAddress,
-          ...(selectedAddressDetail ? { addressDetail: selectedAddressDetail } : {}),
-        };
+        const payload = selectedAddressPatch(selectedAddress, selectedAddressDetail);
         const data = await api.profile.update(payload);
 
         if (active) {
           setUserInfo(current => ({
             ...current,
             address: data?.address ?? selectedAddress,
-            addressDetail: data?.addressDetail ?? selectedAddressDetail ?? current.addressDetail,
+            addressDetail: data?.addressDetail ?? payload.addressDetail,
           }));
           void refreshProfile().catch(refreshError => {
             console.warn('refreshProfile after address update failed', refreshError);
@@ -173,6 +182,7 @@ export default function AdminSettings() {
         console.error('saveAdminAddress error', requestError);
         if (active) Alert.alert('오류', '주소를 저장하지 못했습니다.');
       } finally {
+        savingRef.current = false;
         if (active) {
           setAddressSaving(false);
           navigation.setParams({ selectedAddress: undefined, selectedAddressDetail: undefined });
@@ -188,6 +198,7 @@ export default function AdminSettings() {
   }, [api, navigation, refreshProfile, selectedAddress, selectedAddressDetail]);
 
   const beginEdit = (field: Field) => {
+    if (savingRef.current || addressSaving || loading) return;
     setEditField(field);
     setEditValue(field === 'phone' ? userInfo.phone : userInfo.name);
   };
@@ -199,7 +210,7 @@ export default function AdminSettings() {
   };
 
   const saveEdit = async () => {
-    if (!editField) return;
+    if (!editField || savingRef.current || addressSaving) return;
 
     const trimmedValue = editValue.trim();
     if (editField === 'name' && !trimmedValue) {
@@ -215,6 +226,9 @@ export default function AdminSettings() {
       Alert.alert('설정 오류', 'V2 API가 아직 설정되지 않았습니다.');
       return;
     }
+    savingRef.current = true;
+    profileRequest.current.cancel();
+    setLoading(false);
     setSaving(true);
     try {
       const data = await api.profile.update(
@@ -240,6 +254,7 @@ export default function AdminSettings() {
       console.error('saveAdminProfile error', requestError);
       Alert.alert('오류', '정보를 변경하지 못했습니다.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -251,8 +266,12 @@ export default function AdminSettings() {
         text: '로그아웃',
         style: 'destructive',
         onPress: async () => {
-          await logout();
-          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          try {
+            await logout();
+            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          } catch {
+            Alert.alert('로그아웃 실패', '로그아웃을 완료하지 못했습니다. 다시 시도해 주세요.');
+          }
         },
       },
     ]);
@@ -331,6 +350,7 @@ export default function AdminSettings() {
                 icon="person-outline"
                 title="이름"
                 value={userInfo.name || '미등록'}
+                loading={saving || addressSaving || loading}
                 onPress={() => beginEdit('name')}
               />
               <View style={styles.divider} />
@@ -338,6 +358,7 @@ export default function AdminSettings() {
                 icon="call-outline"
                 title="연락처"
                 value={userInfo.phone || '미등록'}
+                loading={saving || addressSaving || loading}
                 onPress={() => beginEdit('phone')}
               />
               <View style={styles.divider} />
@@ -350,7 +371,7 @@ export default function AdminSettings() {
                     : '등록된 주소가 없습니다.'
                 }
                 actionLabel="검색"
-                loading={addressSaving}
+                loading={addressSaving || saving || loading}
                 onPress={() =>
                   navigation.navigate('AddressSearchScreen', { returnTo: 'AdminSettings' })
                 }
@@ -387,6 +408,7 @@ export default function AdminSettings() {
                 <FormField
                   label={editField === 'phone' ? '연락처' : '이름'}
                   value={editValue}
+                  editable={!saving}
                   onChangeText={setEditValue}
                   keyboardType={editField === 'phone' ? 'phone-pad' : 'default'}
                   autoCapitalize="none"

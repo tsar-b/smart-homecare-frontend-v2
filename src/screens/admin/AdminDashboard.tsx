@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationProp, useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 import { colors, fonts, layout, radius, spacing } from '../../theme/tokens';
+import { LatestRequest } from '../../utils/latestRequest';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -97,11 +98,13 @@ export default function AdminDashboard() {
   const [overview, setOverview] = useState<Overview>(emptyOverview);
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const overviewRequest = useRef(new LatestRequest());
 
   const rangeStart = dayjs().subtract(30, 'day').format('YYYY-MM-DD');
   const rangeEnd = dayjs().format('YYYY-MM-DD');
 
   const loadOverview = useCallback(async () => {
+    const request = overviewRequest.current.start();
     if (!api) {
       setLoading(false);
       setHasError(true);
@@ -119,12 +122,13 @@ export default function AdminDashboard() {
     } as const;
     const [usersResult, requestsResult, pendingResult, confirmedResult] =
       await Promise.allSettled([
-        api.admin.list('users', { page: 1, pageSize: 1 }),
-        api.admin.list('requests', requestRange),
-        api.admin.list('requests', { ...requestRange, status: 'pending' }),
-        api.admin.list('requests', { ...requestRange, status: 'confirmed' }),
+        api.admin.list('users', { page: 1, pageSize: 1 }, { signal: request.signal }),
+        api.admin.list('requests', requestRange, { signal: request.signal }),
+        api.admin.list('requests', { ...requestRange, status: 'pending' }, { signal: request.signal }),
+        api.admin.list('requests', { ...requestRange, status: 'confirmed' }, { signal: request.signal }),
       ]);
 
+    if (!request.isCurrent()) return;
     setOverview({
       accountCount: usersResult.status === 'fulfilled' ? usersResult.value.total : null,
       bookingCount: requestsResult.status === 'fulfilled' ? requestsResult.value.total : null,
@@ -144,6 +148,7 @@ export default function AdminDashboard() {
   useFocusEffect(
     useCallback(() => {
       void loadOverview();
+      return () => overviewRequest.current.cancel();
     }, [loadOverview]),
   );
 

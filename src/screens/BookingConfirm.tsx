@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, usePreventRemove } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Crypto from 'expo-crypto';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +26,7 @@ import type { LocalBookingMedia, ServiceRequest } from '../domain';
 import { canRetryBookingAttachmentUpload, uploadBookingAttachment } from '../media';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
+import { localDateKey, startOfBookingToday as startOfToday, isPastBookingSlot as isPastSlot, formatBookingPrice as formatPrice } from '../utils/bookingTime';
 
 type ConfirmRoute = RouteProp<RootStackParamList, 'Confirm'>;
 type ConfirmNavigation = NativeStackNavigationProp<RootStackParamList>;
@@ -46,18 +47,6 @@ const PREVIEW_SLOTS: Slot[] = [
 const ACCOUNT_MEDIA_LIMIT_MESSAGE =
   '계정의 미디어 저장 용량 한도에 도달했습니다. 삭제할 수 있는 기존 사진이나 동영상을 정리하거나 고객센터에 문의해 주세요.';
 
-function localDateKey(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function startOfToday(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
 function maxReservationDate(): Date {
   const date = startOfToday();
   date.setDate(date.getDate() + 90);
@@ -71,18 +60,6 @@ function formatKoreanDate(value: Date): string {
     day: 'numeric',
     weekday: 'short',
   });
-}
-
-function formatPrice(value: number): string {
-  return `${value.toLocaleString('ko-KR')}원`;
-}
-
-function isPastSlot(date: Date, time: string): boolean {
-  const now = new Date();
-  if (localDateKey(date) !== localDateKey(now)) return false;
-  const [hour, minute] = time.split(':').map(Number);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return false;
-  return hour < now.getHours() || (hour === now.getHours() && minute <= now.getMinutes());
 }
 
 function submitErrorMessage(error: unknown): string {
@@ -177,6 +154,8 @@ export default function BookingConfirm() {
   const [availabilityReloadKey, setAvailabilityReloadKey] = useState(0);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [clockTick, setClockTick] = useState(0);
   const [media, setMedia] = useState<readonly LocalBookingMedia[]>([]);
   const [mediaUploadState, setMediaUploadState] = useState<
     Readonly<Record<string, LocalMediaUploadPresentation>>
@@ -188,6 +167,19 @@ export default function BookingConfirm() {
   const dateKey = localDateKey(reservationDate);
 
   useEffect(() => () => uploadControllerRef.current?.abort(), []);
+  usePreventRemove(isSubmitting && Boolean(token), () => {
+    Alert.alert('예약 처리 중', '접수 결과와 첨부 파일 처리가 끝날 때까지 잠시 기다려 주세요.');
+  });
+  useEffect(() => {
+    if (previewMode || createdBooking) return;
+    const timer = setInterval(() => setClockTick(value => value + 1), 30_000);
+    return () => clearInterval(timer);
+  }, [previewMode, createdBooking]);
+  useEffect(() => {
+    if (!previewMode && !createdBooking && selectedSlot && isPastSlot(reservationDate, selectedSlot)) {
+      setSelectedSlot(null);
+    }
+  }, [clockTick, previewMode, createdBooking, reservationDate, selectedSlot]);
 
   useEffect(() => {
     setSelectedSlot(null);
@@ -270,7 +262,7 @@ export default function BookingConfirm() {
   );
 
   const handleSubmit = async () => {
-    if (isSubmitting) return;
+    if (submittingRef.current) return;
 
     if (previewMode) {
       setSubmitError(
@@ -302,7 +294,16 @@ export default function BookingConfirm() {
       setSubmitError('방문 시간을 선택해 주세요.');
       return;
     }
+    if (!createdBooking && (availabilityLoading || availabilityError ||
+      !availableSlots.some(slot => slot.time === selectedSlot && slot.available) ||
+      isPastSlot(reservationDate, selectedSlot!))) {
+      setSelectedSlot(null);
+      setSubmitError('선택한 시간에 접수할 수 없습니다. 예약 가능 시간을 다시 확인해 주세요.');
+      setAvailabilityReloadKey(value => value + 1);
+      return;
+    }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
     setSubmitError(null);
     const controller = new AbortController();
@@ -445,7 +446,7 @@ export default function BookingConfirm() {
       submissionRef.current = null;
       Alert.alert(
         '예약 접수 완료',
-        `서버에서 확정한 금액은 ${formatPrice(created.totalPrice)}입니다.${media.length > 0 ? ` 첨부 파일 ${media.length}개도 안전하게 저장했습니다.` : ''}`,
+        `${created.totalPrice === -1 ? '요금은 상담 후 안내됩니다.' : `서버에서 계산한 금액은 ${formatPrice(created.totalPrice)}입니다.`}${media.length > 0 ? ` 첨부 파일 ${media.length}개도 안전하게 저장했습니다.` : ''}`,
         [
           {
             text: '예약 상세 보기',
@@ -475,6 +476,7 @@ export default function BookingConfirm() {
       }
     } finally {
       if (uploadControllerRef.current === controller) uploadControllerRef.current = null;
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -623,9 +625,11 @@ export default function BookingConfirm() {
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
               minimumDate={startOfToday()}
               maximumDate={maxReservationDate()}
-              onChange={(_event, date) => {
+              onChange={(event, date) => {
                 setShowPicker(Platform.OS === 'ios');
-                if (date) setReservationDate(date);
+                if (event.type === 'set' && date && localDateKey(date) !== dateKey) {
+                  setReservationDate(date);
+                }
               }}
             />
           ) : null}
@@ -758,12 +762,12 @@ export default function BookingConfirm() {
               ? '디자인 미리보기 · 접수 불가'
               : createdBooking
                 ? '첨부 파일 업로드 계속하기'
-                : '예약 확정'
+                : '예약 접수'
           }
           icon={createdBooking ? 'cloud-upload-outline' : 'checkmark-circle-outline'}
           onPress={() => void handleSubmit()}
           loading={isSubmitting}
-          disabled={availabilityLoading || previewMode || Boolean(configurationError)}
+          disabled={(!createdBooking && (availabilityLoading || Boolean(availabilityError))) || previewMode || Boolean(configurationError)}
           style={styles.submit}
         />
         <Text style={styles.submitNote}>

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -12,6 +12,8 @@ import {
   FormField,
 } from '../components';
 import { customerSafeErrorMessage } from '../api';
+import { createSubmissionLock } from '../auth/submissionLock';
+import { isValidEmail } from '../auth/validation';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
@@ -29,14 +31,16 @@ function toMessage(error: unknown): string {
 export default function LoginScreen() {
   const navigation = useNavigation<LoginNavigation>();
   const route = useRoute<LoginRoute>();
-  const { loginEmail, configurationError } = useAuth();
+  const { loginEmail, configurationError, sessionError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submissionLock = useRef(createSubmissionLock());
+  const displayedError = error ?? sessionError;
 
   const emailError = useMemo(() => {
-    if (!email || /^\S+@\S+\.\S+$/.test(email.trim())) return undefined;
+    if (!email || isValidEmail(email)) return undefined;
     return '이메일 형식을 확인해 주세요.';
   }, [email]);
 
@@ -45,6 +49,7 @@ export default function LoginScreen() {
       setError('이메일과 비밀번호를 정확히 입력해 주세요.');
       return;
     }
+    if (!submissionLock.current.tryAcquire()) return;
 
     setPending(true);
     setError(null);
@@ -53,6 +58,7 @@ export default function LoginScreen() {
     } catch (caught) {
       setError(toMessage(caught));
     } finally {
+      submissionLock.current.release();
       setPending(false);
     }
   };
@@ -143,10 +149,10 @@ export default function LoginScreen() {
           onSubmitEditing={() => void handleLogin()}
         />
 
-        {error ? (
+        {displayedError ? (
           <View style={styles.errorBox} accessibilityRole="alert">
             <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>{displayedError}</Text>
           </View>
         ) : null}
 

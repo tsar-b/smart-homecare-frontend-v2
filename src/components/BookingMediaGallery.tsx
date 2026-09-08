@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { BookingAttachment } from '../domain';
@@ -13,6 +13,21 @@ interface BookingMediaGalleryProps {
   readonly onRetry?: (attachment: BookingAttachment) => void;
   readonly deletingId?: string | null;
   readonly completingId?: string | null;
+}
+
+function ImageThumbnail({ url }: { readonly url: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <View style={[styles.preview, styles.placeholder]}>
+        <Ionicons name="image-outline" size={38} color={colors.primary} />
+        <Text style={styles.size}>눌러서 사진 보기</Text>
+      </View>
+    );
+  }
+  return (
+    <Image source={{ uri: url }} style={styles.preview} resizeMode="cover" onError={() => setFailed(true)} />
+  );
 }
 
 export function BookingMediaGallery({
@@ -42,7 +57,7 @@ export function BookingMediaGallery({
               style={({ pressed }) => [styles.open, pressed && styles.pressed]}
             >
               {attachment.kind === 'image' && attachment.downloadUrl ? (
-                <Image source={{ uri: attachment.downloadUrl }} style={styles.preview} resizeMode="cover" />
+                <ImageThumbnail key={attachment.downloadUrl} url={attachment.downloadUrl} />
               ) : (
                 <View style={[styles.preview, styles.placeholder]}>
                   <Ionicons
@@ -63,7 +78,7 @@ export function BookingMediaGallery({
               {attachment.status === 'pending' && onRetry ? (
                 <Pressable
                   onPress={() => onRetry(attachment)}
-                  disabled={completingId !== null}
+                  disabled={completingId !== null || deletingId !== null}
                   accessibilityRole="button"
                   accessibilityLabel={`${index + 1}번째 첨부 파일 처리 완료 확인`}
                   style={({ pressed }) => [styles.retry, pressed && styles.pressed]}
@@ -83,7 +98,7 @@ export function BookingMediaGallery({
             {onDelete ? (
               <Pressable
                 onPress={() => onDelete(attachment)}
-                disabled={deletingId !== null}
+                disabled={deletingId !== null || completingId !== null || attachment.status === 'deleting'}
                 accessibilityRole="button"
                 accessibilityLabel={`${index + 1}번째 첨부 파일 삭제`}
                 style={({ pressed }) => [styles.delete, pressed && styles.pressed]}

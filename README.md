@@ -1,5 +1,8 @@
 # Smart HomeCare 2.0 frontend
 
+For the verified Android results and current Mac setup checklist, see
+[live QA and Mac handoff](docs/LIVE_QA_MAC_HANDOFF_2026-09-11.md).
+
 The V2 client is an Expo/React Native application for iOS and Android, with a
 browser build for portfolio and interface review. Its
 visual system is deliberately restrained: an off-white canvas, white content

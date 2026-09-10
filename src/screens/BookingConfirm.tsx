@@ -1,10 +1,10 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation, useRoute, usePreventRemove } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Crypto from 'expo-crypto';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError, customerSafeErrorMessage } from '../api';
@@ -165,6 +165,16 @@ export default function BookingConfirm() {
   const submissionRef = useRef<{ fingerprint: string; id: string } | null>(null);
 
   const dateKey = localDateKey(reservationDate);
+
+  // Android reopens/updates its native dialog when this callback changes.
+  // Keep it stable across clock ticks and availability/upload state updates,
+  // so a date the customer is still choosing is not reset to the saved value.
+  const handleReservationDateChange = useCallback((event: DateTimePickerEvent, date?: Date) => {
+    setShowPicker(Platform.OS === 'ios');
+    if (event.type === 'set' && date) {
+      setReservationDate(current => localDateKey(date) !== localDateKey(current) ? date : current);
+    }
+  }, []);
 
   useEffect(() => () => uploadControllerRef.current?.abort(), []);
   usePreventRemove(isSubmitting && Boolean(token), () => {
@@ -625,12 +635,7 @@ export default function BookingConfirm() {
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
               minimumDate={startOfToday()}
               maximumDate={maxReservationDate()}
-              onChange={(event, date) => {
-                setShowPicker(Platform.OS === 'ios');
-                if (event.type === 'set' && date && localDateKey(date) !== dateKey) {
-                  setReservationDate(date);
-                }
-              }}
+              onChange={handleReservationDateChange}
             />
           ) : null}
           {showPicker && Platform.OS === 'ios' ? (

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import dayjs from 'dayjs';
@@ -166,11 +166,13 @@ function HistoryScreen() {
     setDateError(null);
   };
 
-  const selectNativeDate = (field: DateField, selected?: Date) => {
+  // A new onChange identity updates an already-open Android dialog. Keep
+  // history/catalog/loading refreshes from resetting its uncommitted date.
+  const selectNativeDate = useCallback((event: DateTimePickerEvent, selected?: Date) => {
     setOpenPicker(null);
-    if (!selected) return;
+    if (event.type !== 'set' || !selected || !openPicker) return;
 
-    if (field === 'start') {
+    if (openPicker === 'start') {
       const nextEnd = selected > endDate ? selected : endDate;
       setStartDate(selected);
       setStartDraft(calendarKey(selected));
@@ -184,7 +186,7 @@ function HistoryScreen() {
       setEndDraft(calendarKey(selected));
     }
     setDateError(null);
-  };
+  }, [endDate, openPicker, startDate]);
 
   const renderDateField = (field: DateField, label: string, date: Date, draft: string) => {
     if (Platform.OS === 'web') {
@@ -322,7 +324,7 @@ function HistoryScreen() {
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             maximumDate={openPicker === 'start' ? endDate : undefined}
             minimumDate={openPicker === 'end' ? startDate : undefined}
-            onChange={(_event, selected) => selectNativeDate(openPicker, selected)}
+            onChange={selectNativeDate}
           />
         ) : null}
 

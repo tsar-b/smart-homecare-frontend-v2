@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, layout, spacing } from '../theme/tokens';
+import { LanguageSwitch } from '../i18n/LanguageSwitch';
 
 type AppScreenProps = {
   children: React.ReactNode;
@@ -67,6 +68,7 @@ export function AppScreen({
         behavior={keyboardAware && Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.frame}>
+          <LanguageSwitch />
           {content}
           {footer}
         </View>

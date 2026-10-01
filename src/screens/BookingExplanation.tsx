@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -21,6 +22,7 @@ import type {
   SelectedOption,
 } from '../navigation/AppNavigator';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
+import { formatBookingPrice } from '../utils/bookingTime';
 
 type ExplanationRoute = RouteProp<RootStackParamList, 'BookingExplanation'>;
 type ExplanationNavigation = NativeStackNavigationProp<RootStackParamList>;
@@ -28,7 +30,7 @@ type ExplanationNavigation = NativeStackNavigationProp<RootStackParamList>;
 const BOOKING_STEPS = ['가전 선택', '서비스 선택', '제품 종류', '상세 옵션', '일정 확인'];
 
 function formatPrice(value: number): string {
-  return value === -1 ? '상담 후 안내' : `${value.toLocaleString('ko-KR')}원`;
+  return formatBookingPrice(value);
 }
 
 function isRemoteImage(value: string | null | undefined): value is string {
@@ -36,6 +38,7 @@ function isRemoteImage(value: string | null | undefined): value is string {
 }
 
 export default function BookingExplanation() {
+  useLocale();
   const route = useRoute<ExplanationRoute>();
   const navigation = useNavigation<ExplanationNavigation>();
   const { serviceType, subtype, isPreview = false } = route.params;
@@ -89,7 +92,7 @@ export default function BookingExplanation() {
 
     const missing = requiredOptions.find(option => !selectedOptions[option.key]);
     if (missing) {
-      setValidationError(`‘${missing.label}’ 옵션을 선택해 주세요.`);
+      setValidationError(t('‘{option}’ 옵션을 선택해 주세요.', { option: missing.label }));
       return;
     }
 
@@ -106,15 +109,15 @@ export default function BookingExplanation() {
 
   return (
     <AppScreen scroll padded={false}>
-      <AppHeader title="서비스 상세" onBack={() => navigation.goBack()} />
+      <AppHeader title={t("서비스 상세")} onBack={() => navigation.goBack()} />
       <View style={styles.content}>
         <ProgressSteps steps={BOOKING_STEPS} current={3} />
         <PageIntro
-          title={`${subtype.name} ${serviceType.label}`}
+          title={`${t(subtype.name)} ${t(serviceType.label)}`}
           description={
             isPreview
-              ? '상세 화면 구성을 확인하세요. 등급, 금액, 작업 범위는 실제 운영 데이터가 아닙니다.'
-              : '관리 범위와 선택 옵션을 확인하세요. 금액은 접수 시 서버에서 다시 계산됩니다.'
+              ? t('상세 화면 구성을 확인하세요. 등급, 금액, 작업 범위는 실제 운영 데이터가 아닙니다.')
+              : t('관리 범위와 선택 옵션을 확인하세요. 금액은 접수 시 서버에서 다시 계산됩니다.')
           }
         />
 
@@ -122,16 +125,14 @@ export default function BookingExplanation() {
           <View style={styles.previewNotice} accessibilityRole="summary">
             <Ionicons name="eye-outline" size={20} color={colors.primary} />
             <View style={styles.previewCopy}>
-              <Text style={styles.previewTitle}>디자인 미리보기 · 상담 견적만 표시</Text>
+              <Text style={styles.previewTitle}>{t("디자인 미리보기 · 상담 견적만 표시")}</Text>
               <Text style={styles.previewText}>
-                API가 연결되지 않아 실제 가격, 도면, 옵션을 표시하지 않습니다. 다음 일정 화면도
-                확인할 수 있지만 예약은 접수되지 않습니다.
-              </Text>
+                {t("API가 연결되지 않아 실제 가격, 도면, 옵션을 표시하지 않습니다. 다음 일정 화면도 확인할 수 있지만 예약은 접수되지 않습니다.")}</Text>
             </View>
           </View>
         ) : null}
 
-        <SectionTitle>서비스 등급</SectionTitle>
+        <SectionTitle>{t("서비스 등급")}</SectionTitle>
         {serviceType.tiers.length > 0 ? (
           <View style={styles.tierGrid} accessibilityRole="radiogroup">
             {serviceType.tiers.map(item => {
@@ -172,7 +173,7 @@ export default function BookingExplanation() {
         ) : (
           <Card style={styles.emptyCard}>
             <Ionicons name="information-circle-outline" size={22} color={colors.warning} />
-            <Text style={styles.emptyText}>등록된 서비스 등급이 없습니다.</Text>
+            <Text style={styles.emptyText}>{t("등록된 서비스 등급이 없습니다.")}</Text>
           </Card>
         )}
 
@@ -185,25 +186,23 @@ export default function BookingExplanation() {
 
         {blueprintValue ? (
           <View style={styles.section}>
-            <SectionTitle>작업 범위 도면</SectionTitle>
+            <SectionTitle>{t("작업 범위 도면")}</SectionTitle>
             <Card style={styles.mediaCard}>
               {isRemoteImage(blueprintValue) ? (
                 <Image
                   source={{ uri: blueprintValue }}
                   resizeMode="contain"
                   style={styles.blueprint}
-                  accessibilityLabel={`${subtype.name} ${currentTier?.tier ?? ''} 작업 범위 도면`}
+                  accessibilityLabel={t('{product} {tier} 작업 범위 도면', { product: t(subtype.name), tier: t(currentTier?.tier ?? '') })}
                 />
               ) : (
                 <View style={styles.blueprintPlaceholder}>
                   <View style={styles.placeholderIcon}>
                     <Ionicons name="map-outline" size={28} color={colors.primary} />
                   </View>
-                  <Text style={styles.placeholderTitle}>수작업 도면 원본 연결 대기</Text>
+                  <Text style={styles.placeholderTitle}>{t("수작업 도면 원본 연결 대기")}</Text>
                   <Text style={styles.placeholderText}>
-                    데이터에는 ‘{blueprintValue}’가 지정되어 있지만 저장소에서 원본을 찾지 못했습니다.
-                    파일이 복구되면 이 영역에 그대로 표시됩니다.
-                  </Text>
+                    {t('도면 원본을 찾지 못했습니다. 파일이 복구되면 이 영역에 표시됩니다.')}</Text>
                 </View>
               )}
             </Card>
@@ -212,7 +211,7 @@ export default function BookingExplanation() {
 
         {currentTier?.assets?.parts?.length ? (
           <View style={styles.section}>
-            <SectionTitle>관리 부위</SectionTitle>
+            <SectionTitle>{t("관리 부위")}</SectionTitle>
             <View style={styles.chips} accessibilityRole="radiogroup">
               {currentTier.assets.parts.map(part => {
                 const key = part.partId ?? part.url;
@@ -238,17 +237,16 @@ export default function BookingExplanation() {
                     resizeMode="cover"
                     style={styles.partImage}
                     onError={() => setPartImageFailed(true)}
-                    accessibilityLabel={`${selectedPart.label ?? '선택한 부위'} 작업 예시`}
+                    accessibilityLabel={t('{part} 작업 예시', { part: t(selectedPart.label ?? '선택한 부위') })}
                   />
                 ) : (
                   <View style={styles.partFallback}>
                     <Ionicons name="image-outline" size={28} color={colors.textMuted} />
-                    <Text style={styles.partFallbackText}>작업 예시 이미지를 준비 중입니다.</Text>
+                    <Text style={styles.partFallbackText}>{t("작업 예시 이미지를 준비 중입니다.")}</Text>
                   </View>
                 )}
                 <Text style={styles.partCaption}>
-                  {selectedPart.label || '선택한 부위'} 관리 예시
-                </Text>
+                  {selectedPart.label || '선택한 부위'} {t("관리 예시")}</Text>
               </Card>
             ) : null}
           </View>
@@ -256,10 +254,10 @@ export default function BookingExplanation() {
 
         {requiredOptions.length > 0 ? (
           <View style={styles.section}>
-            <SectionTitle>추가 옵션</SectionTitle>
+            <SectionTitle>{t("추가 옵션")}</SectionTitle>
             {requiredOptions.map(option => (
               <Card key={option._id} style={styles.optionCard}>
-                <Text style={styles.optionLabel}>{option.label}</Text>
+                <Text style={styles.optionLabel}>{t(option.label)}</Text>
                 <View style={styles.optionChoices} accessibilityRole="radiogroup">
                   {option.choices.map(choice => {
                     const selected =
@@ -282,7 +280,7 @@ export default function BookingExplanation() {
                           setValidationError(null);
                         }}
                         accessibilityRole="radio"
-                        accessibilityLabel={`${choice.label}, ${formatPrice(choice.extraCost)} 추가`}
+                        accessibilityLabel={t('{option}, {price} 추가', { option: t(choice.label), price: formatPrice(choice.extraCost) })}
                         accessibilityState={{ checked: selected }}
                         style={({ pressed }) => [
                           styles.optionChoice,
@@ -297,11 +295,11 @@ export default function BookingExplanation() {
                               selected && styles.optionChoiceLabelSelected,
                             ]}
                           >
-                            {choice.label}
+                            {t(choice.label)}
                           </Text>
                           <Text style={styles.optionPrice}>
                             {choice.extraCost === 0
-                              ? '추가 금액 없음'
+                              ? t('추가 금액 없음')
                               : `+${formatPrice(choice.extraCost)}`}
                           </Text>
                         </View>
@@ -322,13 +320,13 @@ export default function BookingExplanation() {
         {serviceType.name === 'fix' ? (
           <View style={styles.section}>
             <FormField
-              label="고장 증상"
+              label={t("고장 증상")}
               value={symptom}
               onChangeText={setSymptom}
-              placeholder="예: 냉방이 약하거나 실내기에서 물이 새요."
+              placeholder={t("예: 냉방이 약하거나 실내기에서 물이 새요.")}
               multiline
               maxLength={2000}
-              helper={`${symptom.length}/2000자 · 증상을 자세히 적으면 상담이 빨라집니다.`}
+              helper={t('{count}/2000자 · 증상을 자세히 적으면 상담이 빨라집니다.', { count: symptom.length })}
             />
           </View>
         ) : null}
@@ -337,16 +335,16 @@ export default function BookingExplanation() {
           <View style={styles.estimateRow}>
             <View>
               <Text style={styles.estimateLabel}>
-                {isPreview ? '미리보기 견적' : '현재 예상 금액'}
+                {isPreview ? t('미리보기 견적') : t('현재 예상 금액')}
               </Text>
               <Text style={styles.estimateHelp}>
                 {isPreview
-                  ? '실제 가격은 API 연결 후 확인됩니다.'
-                  : '최종 금액은 서버 기준으로 확정됩니다.'}
+                  ? t('실제 가격은 API 연결 후 확인됩니다.')
+                  : t('최종 금액은 서버 기준으로 확정됩니다.')}
               </Text>
             </View>
             <Text style={styles.estimateValue}>
-              {estimate === null ? '상담 필요' : formatPrice(estimate)}
+              {estimate === null ? t('상담 필요') : formatPrice(estimate)}
             </Text>
           </View>
         </Card>
@@ -354,12 +352,12 @@ export default function BookingExplanation() {
         {validationError ? (
           <View style={styles.validation} accessibilityRole="alert">
             <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.validationText}>{validationError}</Text>
+            <Text style={styles.validationText}>{t(validationError)}</Text>
           </View>
         ) : null}
 
         <Button
-          label={isPreview ? '일정 화면 미리보기' : '일정 선택으로 이동'}
+          label={isPreview ? t('일정 화면 미리보기') : t('일정 선택으로 이동')}
           icon="calendar-outline"
           onPress={handleConfirm}
           style={styles.submit}

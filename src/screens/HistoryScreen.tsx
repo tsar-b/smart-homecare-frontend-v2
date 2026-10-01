@@ -1,3 +1,4 @@
+import { t, useLocale, formatMoney } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -45,7 +46,7 @@ function parseCalendarKey(value: string): Date | null {
 }
 
 function formatPrice(price: number): string {
-  return price < 0 ? '가격 문의' : `${price.toLocaleString('ko-KR')}원`;
+  return price < 0 ? t('가격 문의') : formatMoney(price, 'KRW');
 }
 
 function historyErrorMessage(error: unknown): string {
@@ -69,6 +70,7 @@ function requestDateKey(request: ServiceRequest): string {
 }
 
 function HistoryScreen() {
+  useLocale();
   const navigation = useNavigation<HistoryNavigation>();
   const { api, configurationError } = useAuth();
   const [requests, setRequests] = useState<readonly ServiceRequest[]>([]);
@@ -192,7 +194,7 @@ function HistoryScreen() {
     if (Platform.OS === 'web') {
       return (
         <View style={styles.dateField}>
-          <Text style={styles.dateLabel}>{label}</Text>
+          <Text style={styles.dateLabel}>{t(label)}</Text>
           <TextInput
             value={draft}
             onChangeText={field === 'start' ? setStartDraft : setEndDraft}
@@ -210,12 +212,12 @@ function HistoryScreen() {
 
     return (
       <View style={styles.dateField}>
-        <Text style={styles.dateLabel}>{label}</Text>
+        <Text style={styles.dateLabel}>{t(label)}</Text>
         <Pressable
           onPress={() => setOpenPicker(field)}
           accessibilityRole="button"
-          accessibilityLabel={`${label} ${dayjs(date).format('YYYY년 M월 D일')}`}
-          accessibilityHint="날짜 선택기를 엽니다"
+          accessibilityLabel={`${label} ${dayjs(date).format(t('YYYY년 M월 D일'))}`}
+          accessibilityHint={t("날짜 선택기를 엽니다")}
           style={({ pressed }) => [styles.dateButton, pressed && styles.pressed]}
         >
           <Ionicons name="calendar-outline" size={18} color={colors.primary} />
@@ -241,16 +243,16 @@ function HistoryScreen() {
       <Pressable
         onPress={() => navigation.navigate('BookingDetail', { bookingId: item.id })}
         accessibilityRole="button"
-        accessibilityLabel={`${serviceLabel}, ${dayjs(item.reservationDate).format('YYYY년 M월 D일')}, ${formatPrice(item.totalPrice)}`}
-        accessibilityHint="예약 상세 정보를 엽니다"
+        accessibilityLabel={`${serviceLabel}, ${dayjs(item.reservationDate).format(t('YYYY년 M월 D일'))}, ${formatPrice(item.totalPrice)}`}
+        accessibilityHint={t("예약 상세 정보를 엽니다")}
         style={({ pressed }) => pressed && styles.pressed}
       >
         <Card style={styles.requestCard} elevated>
           <View style={styles.requestHeading}>
             <View style={styles.requestTitleWrap}>
-              <Text style={styles.requestTitle} numberOfLines={1}>{serviceLabel}</Text>
+              <Text style={styles.requestTitle} numberOfLines={1}>{t(serviceLabel)}</Text>
               {subtypeLabel && subtypeLabel !== serviceLabel ? (
-                <Text style={styles.requestSubtitle} numberOfLines={1}>{subtypeLabel}</Text>
+                <Text style={styles.requestSubtitle} numberOfLines={1}>{t(subtypeLabel)}</Text>
               ) : null}
             </View>
             <StatusBadge status={item.status} />
@@ -264,7 +266,7 @@ function HistoryScreen() {
                   {dayjs(item.reservationDate).format('YYYY. M. D.')} {item.reservationTime}
                 </Text>
                 {item.optionSnapshots.length > 0 ? (
-                  <Text style={styles.optionCount}>선택 옵션 {item.optionSnapshots.length}개</Text>
+                  <Text style={styles.optionCount}>{t("선택 옵션")}{item.optionSnapshots.length}{t("개")}</Text>
                 ) : null}
               </View>
             </View>
@@ -280,41 +282,41 @@ function HistoryScreen() {
 
   const emptyState = error ? (
     <StateView
-      title="예약 내역을 불러오지 못했습니다"
+      title={t("예약 내역을 불러오지 못했습니다")}
       message={error}
       icon="cloud-offline-outline"
-      actionLabel="다시 시도"
+      actionLabel={t("다시 시도")}
       onAction={() => void loadHistory()}
     />
   ) : (
     <StateView
-      title="이 기간에는 예약이 없습니다"
-      message="기간을 넓히거나 홈에서 새 서비스를 예약해 보세요."
+      title={t("이 기간에는 예약이 없습니다")}
+      message={t("기간을 넓히거나 홈에서 새 서비스를 예약해 보세요.")}
       icon="calendar-clear-outline"
-      actionLabel="서비스 둘러보기"
+      actionLabel={t("서비스 둘러보기")}
       onAction={() => navigation.navigate('Home')}
     />
   );
 
   return (
     <AppScreen padded={false} footer={<CustomerBottomNav active="History" />}>
-      <AppHeader title="예약 내역" showBrand />
+      <AppHeader title={t("예약 내역")} showBrand />
       <View style={styles.content}>
         <PageIntro
-          title="내 예약"
-          description="예약 진행 상태와 방문 일정을 한눈에 확인하세요."
+          title={t("내 예약")}
+          description={t("예약 진행 상태와 방문 일정을 한눈에 확인하세요.")}
         />
 
         <Card style={styles.filterCard}>
           <View style={styles.filterHeading}>
-            <Text style={styles.filterTitle}>조회 기간</Text>
-            {!loading ? <Text style={styles.resultCount}>{filteredRequests.length}건</Text> : null}
+            <Text style={styles.filterTitle}>{t("조회 기간")}</Text>
+            {!loading ? <Text style={styles.resultCount}>{filteredRequests.length}{t("건")}</Text> : null}
           </View>
           <View style={styles.filterRow}>
-            {renderDateField('start', '시작일', startDate, startDraft)}
-            {renderDateField('end', '종료일', endDate, endDraft)}
+            {renderDateField('start', t('시작일'), startDate, startDraft)}
+            {renderDateField('end', t('종료일'), endDate, endDraft)}
           </View>
-          {dateError ? <Text style={styles.dateError}>{dateError}</Text> : null}
+          {dateError ? <Text style={styles.dateError}>{t(dateError)}</Text> : null}
         </Card>
 
         {openPicker ? (
@@ -331,12 +333,12 @@ function HistoryScreen() {
         {error && requests.length > 0 ? (
           <View style={styles.inlineError} accessibilityRole="alert">
             <Ionicons name="warning-outline" size={18} color={colors.danger} />
-            <Text style={styles.inlineErrorText}>{error}</Text>
+            <Text style={styles.inlineErrorText}>{t(error)}</Text>
           </View>
         ) : null}
 
         {loading && requests.length === 0 ? (
-          <StateView title="예약 내역을 불러오는 중입니다" loading />
+          <StateView title={t("예약 내역을 불러오는 중입니다")} loading />
         ) : (
           <FlatList
             data={filteredRequests}

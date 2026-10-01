@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -526,6 +527,7 @@ function adaptSubtype(
 }
 
 export default function BookingSubtypeSelect() {
+  useLocale();
   const navigation = useNavigation<SubtypeNav>();
   const route = useRoute<SubtypeRoute>();
   const { selectedServiceType, category = 'aircon', isPreview } = route.params;
@@ -613,7 +615,7 @@ export default function BookingSubtypeSelect() {
     );
 
     if (!service) {
-      Alert.alert('오류', `${selectedServiceType} 서비스는 이 기기에서 지원되지 않습니다.`);
+      Alert.alert(t('오류'), `${selectedServiceType} 서비스는 이 기기에서 지원되지 않습니다.`);
       return;
     }
 
@@ -636,11 +638,11 @@ export default function BookingSubtypeSelect() {
 
   return (
     <AppScreen scroll padded={false}>
-      <AppHeader title="서비스 예약" onBack={handleBack} />
+      <AppHeader title={t("서비스 예약")} onBack={handleBack} />
       <View style={styles.content}>
         <ProgressSteps steps={BOOKING_STEPS} current={2} />
         <PageIntro
-          title="에어컨 종류를 선택해 주세요"
+          title={t("에어컨 종류를 선택해 주세요")}
           description={
             previewMode
               ? `${serviceLabel} 예약 화면에 사용되는 제품 형태와 기존 일러스트 배치를 살펴보세요.`
@@ -652,11 +654,9 @@ export default function BookingSubtypeSelect() {
           <View style={styles.previewNotice} accessibilityRole="summary">
             <Ionicons name="eye-outline" size={20} color={colors.primary} />
             <View style={styles.previewCopy}>
-              <Text style={styles.previewTitle}>디자인 미리보기</Text>
+              <Text style={styles.previewTitle}>{t("디자인 미리보기")}</Text>
               <Text style={styles.previewText}>
-                기존 제품 명칭과 일러스트를 화면 검토용으로 표시합니다. 이 목록은 현재 제공 가능
-                제품을 뜻하지 않으며 예약으로 전송되지 않습니다.
-              </Text>
+                {t("기존 제품 명칭과 일러스트를 화면 검토용으로 표시합니다. 이 목록은 현재 제공 가능 제품을 뜻하지 않으며 예약으로 전송되지 않습니다.")}</Text>
             </View>
           </View>
         ) : null}
@@ -664,23 +664,23 @@ export default function BookingSubtypeSelect() {
         {loading ? (
           <StateView
             loading
-            title="제품 종류를 불러오는 중이에요"
-            message="선택한 서비스를 지원하는 제품을 확인하고 있습니다."
+            title={t("제품 종류를 불러오는 중이에요")}
+            message={t("선택한 서비스를 지원하는 제품을 확인하고 있습니다.")}
           />
         ) : error ? (
           <StateView
             icon="cloud-offline-outline"
-            title="제품 종류를 불러오지 못했어요"
-            message="네트워크 연결을 확인한 뒤 다시 시도해 주세요."
-            actionLabel="다시 시도"
+            title={t("제품 종류를 불러오지 못했어요")}
+            message={t("네트워크 연결을 확인한 뒤 다시 시도해 주세요.")}
+            actionLabel={t("다시 시도")}
             onAction={() => void loadSubtypes()}
           />
         ) : subtypes.length === 0 ? (
           <StateView
             icon="snow-outline"
-            title="선택할 수 있는 제품이 없어요"
-            message="현재 이 서비스를 지원하는 제품 종류가 등록되어 있지 않습니다."
-            actionLabel="다시 확인"
+            title={t("선택할 수 있는 제품이 없어요")}
+            message={t("현재 이 서비스를 지원하는 제품 종류가 등록되어 있지 않습니다.")}
+            actionLabel={t("다시 확인")}
             onAction={() => void loadSubtypes()}
           />
         ) : (
@@ -692,8 +692,8 @@ export default function BookingSubtypeSelect() {
                   <Pressable
                     onPress={() => handleSelect(subtype)}
                     accessibilityRole="button"
-                    accessibilityLabel={subtype.name}
-                    accessibilityHint="상세 옵션 선택 단계로 이동합니다"
+                    accessibilityLabel={t(subtype.name)}
+                    accessibilityHint={t("상세 옵션 선택 단계로 이동합니다")}
                     style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
                   >
                     <View style={styles.iconWrap}>
@@ -708,12 +708,12 @@ export default function BookingSubtypeSelect() {
                         <Ionicons name="snow-outline" size={36} color={colors.primary} />
                       )}
                     </View>
-                    <Text style={styles.cardTitle}>{subtype.name}</Text>
+                    <Text style={styles.cardTitle}>{t(subtype.name)}</Text>
                     <Text style={styles.cardDescription}>
-                      {previewMode ? '화면 구성 예시' : `${serviceLabel} 서비스 가능`}
+                      {previewMode ? t('화면 구성 예시') : `${serviceLabel} 서비스 가능`}
                     </Text>
                     <View style={styles.cardAction}>
-                      <Text style={styles.cardActionText}>상세 옵션</Text>
+                      <Text style={styles.cardActionText}>{t("상세 옵션")}</Text>
                       <Ionicons name="arrow-forward" size={16} color={colors.primary} />
                     </View>
                   </Pressable>

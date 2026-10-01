@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useRef, useState } from 'react';
@@ -49,6 +50,7 @@ export function BookingMediaPicker({
   uploadState = {},
   onError,
 }: BookingMediaPickerProps) {
+  useLocale();
   const [preparing, setPreparing] = useState(false);
   const selectingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -66,7 +68,7 @@ export function BookingMediaPicker({
     if (!mountedRef.current) return;
     const handler = latestRef.current.onError;
     handler?.(message);
-    if (!handler) Alert.alert('첨부 파일을 추가할 수 없습니다', message);
+    if (!handler) Alert.alert(t('첨부 파일을 추가할 수 없습니다'), message);
   };
 
   const chooseMedia = async () => {
@@ -111,7 +113,7 @@ export function BookingMediaPicker({
         for (const [source, id] of newSources) sourceSelectionsRef.current.set(source, id);
       }
     } catch (error) {
-      showError(error instanceof MediaSelectionError ? error.message : '선택한 파일을 준비하지 못했습니다. 다시 선택해 주세요.');
+      showError(error instanceof MediaSelectionError ? error.message : t('선택한 파일을 준비하지 못했습니다. 다시 선택해 주세요.'));
     } finally {
       selectingRef.current = false;
       if (mountedRef.current) setPreparing(false);
@@ -128,11 +130,10 @@ export function BookingMediaPicker({
       <View style={styles.headingRow}>
         <View style={styles.headingCopy}>
           <Text style={styles.title}>
-            {BOOKING_MEDIA_PILOT_UPLOADS_ENABLED ? '현장 사진 및 동영상' : '현장 사진'}
+            {BOOKING_MEDIA_PILOT_UPLOADS_ENABLED ? t('현장 사진 및 동영상') : t('현장 사진')}
           </Text>
           <Text style={styles.description}>
-            고장 부위나 설치 환경을 보여 주면 상담과 방문 준비에 도움이 됩니다.
-          </Text>
+            {t("고장 부위나 설치 환경을 보여 주면 상담과 방문 준비에 도움이 됩니다.")}</Text>
         </View>
         <Text style={styles.counter}>{totalCount}/{MAX_BOOKING_ATTACHMENTS}</Text>
       </View>
@@ -161,7 +162,7 @@ export function BookingMediaPicker({
                     size={13}
                     color={colors.white}
                   />
-                  <Text style={styles.kindText}>{media.kind === 'image' ? '사진' : '동영상'}</Text>
+                  <Text style={styles.kindText}>{media.kind === 'image' ? t('사진') : t('동영상')}</Text>
                 </View>
                 {!locked ? (
                   <Pressable
@@ -185,7 +186,7 @@ export function BookingMediaPicker({
                     </View>
                   ) : null}
                   {presentation?.status === 'uploaded' ? (
-                    <Text style={styles.successText}>업로드 완료</Text>
+                    <Text style={styles.successText}>{t("업로드 완료")}</Text>
                   ) : presentation?.status === 'failed' ? (
                     <Text style={styles.errorText} numberOfLines={2}>{presentation.error || '업로드 실패'}</Text>
                   ) : null}
@@ -199,24 +200,24 @@ export function BookingMediaPicker({
       <Button
         label={
           preview
-            ? '디자인 미리보기 · 첨부 불가'
+            ? t('디자인 미리보기 · 첨부 불가')
             : atLimit
-              ? '첨부 가능 개수를 모두 사용했습니다'
+              ? t('첨부 가능 개수를 모두 사용했습니다')
               : BOOKING_MEDIA_PILOT_UPLOADS_ENABLED
-                ? '사진 또는 동영상 추가'
-                : '사진 추가'
+                ? t('사진 또는 동영상 추가')
+                : t('사진 추가')
         }
         icon="images-outline"
         variant="secondary"
         onPress={() => void chooseMedia()}
         loading={preparing}
         disabled={disabled || preview || atLimit}
-        accessibilityHint="기기의 사진 보관함에서 예약에 첨부할 파일을 선택합니다"
+        accessibilityHint={t("기기의 사진 보관함에서 예약에 첨부할 파일을 선택합니다")}
       />
       <Text style={styles.limitText}>
         {BOOKING_MEDIA_PILOT_UPLOADS_ENABLED
-          ? '최대 6개 · 동영상 2개 · 사진당 10MB · 동영상당 60초/45MB · 전체 100MB'
-          : '최대 6개 · 사진당 약 6.3MB'}
+          ? t('최대 6개 · 동영상 2개 · 사진당 10MB · 동영상당 60초/45MB · 전체 100MB')
+          : t('최대 6개 · 사진당 약 6.3MB')}
       </Text>
     </View>
   );

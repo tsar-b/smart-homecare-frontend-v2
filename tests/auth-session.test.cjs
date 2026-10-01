@@ -97,6 +97,35 @@ test('missing API keeps cached admin credentials stored but does not activate th
   assert.deepEqual(JSON.parse(harness.secure.get('shc.session')), stored);
 });
 
+test('standard login normalizes only the email and persists a refreshable member session', async () => {
+  let submitted;
+  const harness = providerHarness({ api: { auth: { login: async input => { submitted = input; return session; } } } });
+  harness.render();
+  await tick();
+  await harness.render().loginEmail('  Member@Example.com  ', ' password123 ');
+  assert.deepEqual(submitted, { email: 'member@example.com', password: ' password123 ' });
+  assert.equal(harness.render().token, session.accessToken);
+  assert.equal(harness.render().currentUser.id, user.id);
+  assert.equal(harness.apiOptions.getRefreshToken(), session.refreshToken);
+  assert.deepEqual(JSON.parse(harness.secure.get('shc.session')), session);
+});
+
+test('a rejected standard login leaves no session and can be retried successfully', async () => {
+  let attempts = 0;
+  const failure = new Error('email confirmation required');
+  const harness = providerHarness({ api: { auth: { login: async () => {
+    if (++attempts === 1) throw failure;
+    return session;
+  } } } });
+  harness.render();
+  await tick();
+  await assert.rejects(harness.render().loginEmail('member@example.com', 'password123'), error => error === failure);
+  assert.equal(harness.render().token, null);
+  assert.equal(harness.secure.has('shc.session'), false);
+  await harness.render().loginEmail('member@example.com', 'password123');
+  assert.equal(harness.render().token, session.accessToken);
+});
+
 test('a profile response arriving after logout cannot restore the old customer', async () => {
   const response = deferred();
   const harness = providerHarness({ api: { profile: { get: () => response.promise } } });

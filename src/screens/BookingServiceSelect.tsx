@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -111,6 +112,7 @@ function subtypeSupportsService(
 }
 
 export default function BookingServiceSelect() {
+  useLocale();
   const navigation = useNavigation<SelNav>();
   const route = useRoute<SelRoute>();
   const { category } = route.params ?? {};
@@ -202,19 +204,19 @@ export default function BookingServiceSelect() {
       ...(isPreview ? { isPreview: true } : {}),
     });
 
-  const categoryLabel = category === 'aircon' ? '에어컨' : '선택한 가전';
+  const categoryLabel = category === 'aircon' ? t('에어컨') : t('선택한 가전');
 
   return (
     <AppScreen scroll padded={false}>
-      <AppHeader title="서비스 예약" onBack={handleBack} />
+      <AppHeader title={t("서비스 예약")} onBack={handleBack} />
       <View style={styles.content}>
         <ProgressSteps steps={BOOKING_STEPS} current={1} />
         <PageIntro
-          title="어떤 도움이 필요하세요?"
+          title={t("어떤 도움이 필요하세요?")}
           description={
             isPreview
-              ? `${categoryLabel} 예약 화면의 서비스 선택 단계를 살펴보세요.`
-              : `${categoryLabel}에 필요한 서비스를 선택해 주세요.`
+              ? t('{category} 예약 화면의 서비스 선택 단계를 살펴보세요.', { category: t(categoryLabel) })
+              : t('{category}에 필요한 서비스를 선택해 주세요.', { category: t(categoryLabel) })
           }
         />
 
@@ -222,11 +224,9 @@ export default function BookingServiceSelect() {
           <View style={styles.previewNotice} accessibilityRole="summary">
             <Ionicons name="eye-outline" size={20} color={colors.primary} />
             <View style={styles.previewCopy}>
-              <Text style={styles.previewTitle}>디자인 미리보기</Text>
+              <Text style={styles.previewTitle}>{t("디자인 미리보기")}</Text>
               <Text style={styles.previewText}>
-                아래 항목은 기존 서비스 명칭을 사용한 화면 예시입니다. 실제 제공 범위와 가격은 API
-                연결 후 표시되며, 이 흐름에서는 예약이 접수되지 않습니다.
-              </Text>
+                {t("아래 항목은 기존 서비스 명칭을 사용한 화면 예시입니다. 실제 제공 범위와 가격은 API 연결 후 표시되며, 이 흐름에서는 예약이 접수되지 않습니다.")}</Text>
             </View>
           </View>
         ) : null}
@@ -234,23 +234,23 @@ export default function BookingServiceSelect() {
         {loading ? (
           <StateView
             loading
-            title="서비스를 불러오는 중이에요"
-            message="이용 가능한 항목을 확인하고 있습니다."
+            title={t("서비스를 불러오는 중이에요")}
+            message={t("이용 가능한 항목을 확인하고 있습니다.")}
           />
         ) : error ? (
           <StateView
             icon="cloud-offline-outline"
-            title="서비스를 불러오지 못했어요"
-            message="네트워크 연결을 확인한 뒤 다시 시도해 주세요."
-            actionLabel="다시 시도"
+            title={t("서비스를 불러오지 못했어요")}
+            message={t("네트워크 연결을 확인한 뒤 다시 시도해 주세요.")}
+            actionLabel={t("다시 시도")}
             onAction={() => void loadServices()}
           />
         ) : services.length === 0 ? (
           <StateView
             icon="file-tray-outline"
-            title="이용 가능한 서비스가 없어요"
-            message="잠시 후 다시 확인하거나 이전 단계에서 다른 가전을 선택해 주세요."
-            actionLabel="다시 확인"
+            title={t("이용 가능한 서비스가 없어요")}
+            message={t("잠시 후 다시 확인하거나 이전 단계에서 다른 가전을 선택해 주세요.")}
+            actionLabel={t("다시 확인")}
             onAction={() => void loadServices()}
           />
         ) : (
@@ -259,7 +259,7 @@ export default function BookingServiceSelect() {
               const isDisabled = service.key === 'sell';
               const presentation = SERVICE_PRESENTATION[service.key] ?? {
                 icon: 'options-outline' as IconName,
-                description: '서비스 상세 내용을 다음 단계에서 확인할 수 있습니다.',
+                description: t('서비스 상세 내용을 다음 단계에서 확인할 수 있습니다.'),
               };
 
               return (
@@ -268,11 +268,11 @@ export default function BookingServiceSelect() {
                     onPress={() => !isDisabled && handleSelect(service)}
                     disabled={isDisabled}
                     accessibilityRole="button"
-                    accessibilityLabel={service.label}
+                    accessibilityLabel={t(service.label)}
                     accessibilityHint={
                       isDisabled
-                        ? '현재 준비 중인 서비스입니다'
-                        : '제품 종류 선택 단계로 이동합니다'
+                        ? t('현재 준비 중인 서비스입니다')
+                        : t('제품 종류 선택 단계로 이동합니다')
                     }
                     accessibilityState={{ disabled: isDisabled }}
                     style={({ pressed }) => [
@@ -289,18 +289,18 @@ export default function BookingServiceSelect() {
                       />
                     </View>
                     <Text style={[styles.cardTitle, isDisabled && styles.textDisabled]}>
-                      {service.label}
+                      {t(service.label)}
                     </Text>
                     <Text style={[styles.cardDescription, isDisabled && styles.textDisabled]}>
-                      {presentation.description}
+                      {t(presentation.description)}
                     </Text>
                     {isDisabled ? (
                       <View style={styles.statusPill}>
-                        <Text style={styles.statusText}>준비 중</Text>
+                        <Text style={styles.statusText}>{t("준비 중")}</Text>
                       </View>
                     ) : (
                       <View style={styles.cardAction}>
-                        <Text style={styles.cardActionText}>선택</Text>
+                        <Text style={styles.cardActionText}>{t("선택")}</Text>
                         <Ionicons name="arrow-forward" size={16} color={colors.primary} />
                       </View>
                     )}

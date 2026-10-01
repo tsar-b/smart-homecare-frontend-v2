@@ -84,6 +84,11 @@ export interface CreateV2ApiOptions extends ApiConfigOverrides {
 }
 
 export interface AuthApi {
+  readonly browserConfig: () => Promise<{ providers: readonly ('kakao' | 'apple' | 'google')[]; recovery: boolean }>;
+  readonly startOAuth: (input: { provider: 'kakao' | 'apple' | 'google'; redirectUri: string; state: string; codeChallenge: string }) => Promise<{ authorizationUrl: string }>;
+  readonly exchangeOAuth: (input: { provider: 'kakao' | 'apple' | 'google'; code: string; codeVerifier: string }) => Promise<AuthSession>;
+  readonly startRecovery: (input: { email: string; redirectUri: string; state: string; codeChallenge: string }) => Promise<void>;
+  readonly finishRecovery: (input: { code: string; codeVerifier: string; password: string }) => Promise<void>;
   readonly register: (
     input: RegisterAccountInput,
     options?: ApiRequestOptions,
@@ -283,6 +288,28 @@ function compactQuery(query: AdminListQuery | undefined): Record<string, unknown
 
 function createAuthApi(publicHttp: AxiosInstance, authenticatedHttp: AxiosInstance): AuthApi {
   return {
+    async browserConfig() {
+      const { data } = await publicHttp.get('/api/auth/browser/config');
+      if (!Array.isArray(data?.providers) || data.providers.some((p: unknown) => !['kakao', 'apple', 'google'].includes(String(p)))) {
+        throw new TypeError('Invalid authentication configuration');
+      }
+      return { providers: data.providers, recovery: data.recovery === true };
+    },
+    async startOAuth(input) {
+      const { data } = await publicHttp.post('/api/auth/oauth/start', input);
+      if (typeof data?.authorizationUrl !== 'string') throw new TypeError('Invalid authentication URL');
+      const url = new URL(data.authorizationUrl);
+      if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/auth/v1/authorize') {
+        throw new TypeError('Unsafe authentication URL');
+      }
+      return { authorizationUrl: url.toString() };
+    },
+    async exchangeOAuth(input) {
+      const { data } = await publicHttp.post('/api/auth/oauth/exchange', input);
+      return adaptAuthSession(data, 'oauthResponse');
+    },
+    async startRecovery(input) { await publicHttp.post('/api/auth/recovery/start', input); },
+    async finishRecovery(input) { await publicHttp.post('/api/auth/recovery/finish', input); },
     async register(input, options) {
       const response = await publicHttp.post('/api/auth/register', input, requestConfig(options));
       return adaptRegistrationResult(response.data);

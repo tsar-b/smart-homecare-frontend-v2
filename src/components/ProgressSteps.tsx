@@ -1,4 +1,5 @@
 import React from 'react';
+import { t, useLocale } from '../i18n';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
 
@@ -8,13 +9,14 @@ type ProgressStepsProps = {
 };
 
 export function ProgressSteps({ steps, current }: ProgressStepsProps) {
+  useLocale();
   return (
     <View style={styles.wrap} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: steps.length, now: current + 1 }}>
       <Text style={styles.count}>{current + 1} / {steps.length}</Text>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${((current + 1) / steps.length) * 100}%` }]} />
       </View>
-      <Text style={styles.label}>{steps[current]}</Text>
+      <Text style={styles.label}>{t(steps[current])}</Text>
     </View>
   );
 }

@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from '../i18n';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
@@ -22,6 +23,7 @@ import {
 } from '../components';
 import type { LocalMediaUploadPresentation } from '../components';
 import { useAuth } from '../context/AuthContext';
+import { memberBookingState, memberBookingMessages } from '../auth/memberBooking';
 import type { LocalBookingMedia, ServiceRequest } from '../domain';
 import { canRetryBookingAttachmentUpload, uploadBookingAttachment } from '../media';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -54,7 +56,7 @@ function maxReservationDate(): Date {
 }
 
 function formatKoreanDate(value: Date): string {
-  return value.toLocaleDateString('ko-KR', {
+  return value.toLocaleDateString(getLocale() === 'en' ? 'en-US' : 'ko-KR', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -129,6 +131,7 @@ function attachmentUploadErrorMessage(error: unknown): string {
 }
 
 export default function BookingConfirm() {
+  useLocale();
   const navigation = useNavigation<ConfirmNavigation>();
   const route = useRoute<ConfirmRoute>();
   const {
@@ -140,6 +143,8 @@ export default function BookingConfirm() {
     isPreview = false,
   } = route.params;
   const { api, token, currentUser, configurationError } = useAuth();
+  const membershipState = memberBookingState(token, currentUser);
+  const membershipMessage = membershipState === 'ready' ? null : memberBookingMessages[membershipState];
   const previewMode = isPreview || (!api && Boolean(configurationError));
 
   const [reservationDate, setReservationDate] = useState(startOfToday);
@@ -178,7 +183,7 @@ export default function BookingConfirm() {
 
   useEffect(() => () => uploadControllerRef.current?.abort(), []);
   usePreventRemove(isSubmitting && Boolean(token), () => {
-    Alert.alert('예약 처리 중', '접수 결과와 첨부 파일 처리가 끝날 때까지 잠시 기다려 주세요.');
+    Alert.alert(t('예약 처리 중'), t('접수 결과와 첨부 파일 처리가 끝날 때까지 잠시 기다려 주세요.'));
   });
   useEffect(() => {
     if (previewMode || createdBooking) return;
@@ -285,12 +290,13 @@ export default function BookingConfirm() {
       setSubmitError(
         configurationError
           ? '현재는 디자인 미리보기입니다. API 주소를 연결하면 실제 예약을 접수할 수 있습니다.'
-          : '예약하려면 로그인하거나 비회원 정보를 등록해 주세요.',
+          : memberBookingMessages.sign_in,
       );
       return;
     }
-    if (!createdBooking && !currentUser?.name) {
-      setSubmitError('예약자 정보를 불러오지 못했습니다. 설정에서 프로필을 확인해 주세요.');
+    const membership = memberBookingState(token, currentUser);
+    if (!createdBooking && membership !== 'ready') {
+      setSubmitError(memberBookingMessages[membership]);
       return;
     }
     const { serviceTypeId, subtypeId, pricingTierId } = canonicalSelection;
@@ -455,11 +461,11 @@ export default function BookingConfirm() {
 
       submissionRef.current = null;
       Alert.alert(
-        '예약 접수 완료',
-        `${created.totalPrice === -1 ? '요금은 상담 후 안내됩니다.' : `서버에서 계산한 금액은 ${formatPrice(created.totalPrice)}입니다.`}${media.length > 0 ? ` 첨부 파일 ${media.length}개도 안전하게 저장했습니다.` : ''}`,
+        t('예약 접수 완료'),
+        `${created.totalPrice === -1 ? t('요금은 상담 후 안내됩니다.') : `서버에서 계산한 금액은 ${formatPrice(created.totalPrice)}입니다.`}${media.length > 0 ? ` 첨부 파일 ${media.length}개도 안전하게 저장했습니다.` : ''}`,
         [
           {
-            text: '예약 상세 보기',
+            text: t('예약 상세 보기'),
             onPress: () =>
               navigation.reset({
                 index: 1,
@@ -493,15 +499,15 @@ export default function BookingConfirm() {
 
   return (
     <AppScreen scroll padded={false}>
-      <AppHeader title="예약 확인" onBack={() => navigation.goBack()} />
+      <AppHeader title={t("예약 확인")} onBack={() => navigation.goBack()} />
       <View style={styles.content}>
         <ProgressSteps steps={BOOKING_STEPS} current={4} />
         <PageIntro
-          title={previewMode ? '일정 화면을 미리 확인하세요' : '방문 일정을 선택해 주세요'}
+          title={previewMode ? t('일정 화면을 미리 확인하세요') : t('방문 일정을 선택해 주세요')}
           description={
             previewMode
-              ? '날짜와 시간 선택 동작을 살펴볼 수 있지만 실제 예약 가능 여부를 나타내지 않습니다.'
-              : '서비스 내용과 연락처를 확인한 뒤 한 번만 접수됩니다.'
+              ? t('날짜와 시간 선택 동작을 살펴볼 수 있지만 실제 예약 가능 여부를 나타내지 않습니다.')
+              : t('서비스 내용과 연락처를 확인한 뒤 한 번만 접수됩니다.')
           }
         />
 
@@ -509,11 +515,9 @@ export default function BookingConfirm() {
           <View style={styles.previewNotice} accessibilityRole="summary">
             <Ionicons name="eye-outline" size={20} color={colors.primary} />
             <View style={styles.previewCopy}>
-              <Text style={styles.previewTitle}>디자인 미리보기 · 접수 불가</Text>
+              <Text style={styles.previewTitle}>{t("디자인 미리보기 · 접수 불가")}</Text>
               <Text style={styles.previewText}>
-                표시된 날짜와 시간은 인터페이스 확인용 예시이며 실제 예약 가능 시간이 아닙니다.
-                고객 정보나 예약 요청은 서버로 전송되지 않습니다.
-              </Text>
+                {t("표시된 날짜와 시간은 인터페이스 확인용 예시이며 실제 예약 가능 시간이 아닙니다. 고객 정보나 예약 요청은 서버로 전송되지 않습니다.")}</Text>
             </View>
           </View>
         ) : null}
@@ -522,10 +526,9 @@ export default function BookingConfirm() {
           <View style={styles.savedNotice} accessibilityRole="summary">
             <Ionicons name="checkmark-circle" size={21} color={colors.success} />
             <View style={styles.previewCopy}>
-              <Text style={styles.savedTitle}>예약 내용은 이미 안전하게 접수되었습니다</Text>
+              <Text style={styles.savedTitle}>{t("예약 내용은 이미 안전하게 접수되었습니다")}</Text>
               <Text style={styles.savedText}>
-                아래 날짜·시간·요청 내용은 접수 당시 값으로 잠겼습니다. 첨부 파일만 추가하거나 실패한 업로드를 다시 시도할 수 있습니다.
-              </Text>
+                {t("아래 날짜·시간·요청 내용은 접수 당시 값으로 잠겼습니다. 첨부 파일만 추가하거나 실패한 업로드를 다시 시도할 수 있습니다.")}</Text>
             </View>
           </View>
         ) : null}
@@ -536,9 +539,9 @@ export default function BookingConfirm() {
               <Ionicons name="document-text-outline" size={22} color={colors.primary} />
             </View>
             <View style={styles.summaryTitleWrap}>
-              <Text style={styles.summaryTitle}>{subtype.name}</Text>
+              <Text style={styles.summaryTitle}>{t(subtype.name)}</Text>
               <Text style={styles.summarySubtitle}>
-                {serviceType.label} · {tier.tier.toUpperCase()}
+                {t(serviceType.label)} · {t(tier.tier.toUpperCase())}
               </Text>
             </View>
           </View>
@@ -547,7 +550,7 @@ export default function BookingConfirm() {
             <View style={styles.summarySection}>
               {selectedOptions.map(option => (
                 <View key={`${option.key}-${option.selectedValue}`} style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{option.label}</Text>
+                  <Text style={styles.detailLabel}>{t(option.label)}</Text>
                   <Text style={styles.detailValue}>{option.selectedLabel}</Text>
                 </View>
               ))}
@@ -557,25 +560,26 @@ export default function BookingConfirm() {
           <View style={styles.priceRow}>
             <View>
               <Text style={styles.priceLabel}>
-                {previewMode ? '미리보기 견적' : '예상 금액'}
+                {previewMode ? t('미리보기 견적') : t('예상 금액')}
               </Text>
               <Text style={styles.priceHint}>
-                {previewMode ? '실제 가격 데이터 아님' : '서버 계산 후 최종 확정'}
+                {previewMode ? t('실제 가격 데이터 아님') : t('서버 계산 후 최종 확정')}
               </Text>
             </View>
             <Text style={styles.priceValue}>
-              {localEstimate === null ? '상담 필요' : formatPrice(localEstimate)}
+              {localEstimate === null ? t('상담 필요') : formatPrice(localEstimate)}
             </Text>
           </View>
+          <Text style={styles.priceHint}>{t('표시 통화는 KRW입니다. 환율 변환은 적용하지 않습니다.')}</Text>
         </Card>
 
         {serviceType.name === 'fix' ? (
           <Card style={styles.symptomCard}>
             <FormField
-              label="고장 증상"
+              label={t("고장 증상")}
               value={symptom}
               onChangeText={setSymptom}
-              placeholder="증상을 자세히 적어 주세요."
+              placeholder={t("증상을 자세히 적어 주세요.")}
               multiline
               maxLength={2000}
               editable={!createdBooking && !isSubmitting}
@@ -604,13 +608,13 @@ export default function BookingConfirm() {
         </Card>
 
         <View style={styles.section}>
-          <SectionTitle>방문 날짜</SectionTitle>
+          <SectionTitle>{t("방문 날짜")}</SectionTitle>
           <Pressable
             onPress={() => setShowPicker(true)}
             disabled={Boolean(createdBooking) || isSubmitting}
             accessibilityRole="button"
-            accessibilityLabel={`방문 날짜, ${formatKoreanDate(reservationDate)}`}
-            accessibilityHint="날짜 선택기를 엽니다"
+            accessibilityLabel={t('방문 날짜, {date}', { date: formatKoreanDate(reservationDate) })}
+            accessibilityHint={t("날짜 선택기를 엽니다")}
             accessibilityState={{ disabled: Boolean(createdBooking) || isSubmitting }}
             style={({ pressed }) => [
               styles.dateButton,
@@ -622,7 +626,7 @@ export default function BookingConfirm() {
               <Ionicons name="calendar-outline" size={22} color={colors.primary} />
             </View>
             <View style={styles.dateCopy}>
-              <Text style={styles.dateEyebrow}>선택한 날짜</Text>
+              <Text style={styles.dateEyebrow}>{t("선택한 날짜")}</Text>
               <Text style={styles.dateText}>{formatKoreanDate(reservationDate)}</Text>
             </View>
             <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
@@ -640,7 +644,7 @@ export default function BookingConfirm() {
           ) : null}
           {showPicker && Platform.OS === 'ios' ? (
             <Button
-              label="날짜 선택 완료"
+              label={t("날짜 선택 완료")}
               variant="secondary"
               onPress={() => setShowPicker(false)}
               style={styles.pickerDone}
@@ -650,29 +654,29 @@ export default function BookingConfirm() {
 
         <View style={styles.section}>
           <View style={styles.slotHeading}>
-            <SectionTitle>방문 시간</SectionTitle>
+            <SectionTitle>{t("방문 시간")}</SectionTitle>
             {previewMode ? (
               <View style={styles.previewBadge}>
-                <Text style={styles.previewBadgeText}>예시 시간</Text>
+                <Text style={styles.previewBadgeText}>{t("예시 시간")}</Text>
               </View>
             ) : null}
           </View>
 
           {availabilityLoading ? (
-            <StateView loading title="예약 가능 시간을 확인하고 있어요" />
+            <StateView loading title={t("예약 가능 시간을 확인하고 있어요")} />
           ) : availabilityError ? (
             <StateView
               icon="cloud-offline-outline"
-              title="시간 정보를 불러오지 못했어요"
+              title={t("시간 정보를 불러오지 못했어요")}
               message={availabilityError}
-              actionLabel="다시 시도"
+              actionLabel={t("다시 시도")}
               onAction={() => setAvailabilityReloadKey(value => value + 1)}
             />
           ) : availableSlots.length === 0 ? (
             <StateView
               icon="calendar-clear-outline"
-              title="선택 가능한 시간이 없어요"
-              message="다른 날짜를 선택해 주세요."
+              title={t("선택 가능한 시간이 없어요")}
+              message={t("다른 날짜를 선택해 주세요.")}
             />
           ) : (
             <View style={styles.slotGrid} accessibilityRole="radiogroup">
@@ -692,7 +696,7 @@ export default function BookingConfirm() {
                     }}
                     disabled={disabled}
                     accessibilityRole="radio"
-                    accessibilityLabel={`${slot.time}${previewMode ? ', 미리보기 예시' : ''}`}
+                    accessibilityLabel={`${slot.time}${previewMode ? t(', 미리보기 예시') : ''}`}
                     accessibilityState={{ checked: selected, disabled }}
                     style={({ pressed }) => [
                       styles.slot,
@@ -712,7 +716,7 @@ export default function BookingConfirm() {
                     </Text>
                     {disabled ? (
                       <Text style={styles.slotUnavailable}>
-                        {previewMode ? '비활성 예시' : '예약 불가'}
+                        {previewMode ? t('비활성 예시') : t('예약 불가')}
                       </Text>
                     ) : null}
                   </Pressable>
@@ -725,62 +729,70 @@ export default function BookingConfirm() {
         <Card style={styles.customerCard}>
           <View style={styles.customerHeading}>
             <Ionicons name="person-circle-outline" size={24} color={colors.primary} />
-            <Text style={styles.customerTitle}>예약자 정보</Text>
+            <Text style={styles.customerTitle}>{t("예약자 정보")}</Text>
           </View>
           {currentUser ? (
             <>
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>이름</Text>
-                <Text style={styles.detailValue}>{currentUser.name || '미입력'}</Text>
+                <Text style={styles.detailLabel}>{t("이름")}</Text>
+                <Text style={styles.detailValue}>{currentUser.name || t('미입력')}</Text>
               </View>
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>연락처</Text>
-                <Text style={styles.detailValue}>{currentUser.phone || '미입력'}</Text>
+                <Text style={styles.detailLabel}>{t("연락처")}</Text>
+                <Text style={styles.detailValue}>{currentUser.phone || t('미입력')}</Text>
               </View>
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>방문 주소</Text>
+                <Text style={styles.detailLabel}>{t("방문 주소")}</Text>
                 <Text style={styles.detailValue} numberOfLines={2}>
                   {[currentUser.address, currentUser.addressDetail].filter(Boolean).join(' ') ||
-                    '미입력'}
+                    t('미입력')}
                 </Text>
               </View>
             </>
           ) : (
             <Text style={styles.missingCustomer}>
               {previewMode
-                ? '미리보기에서는 고객 정보를 불러오거나 전송하지 않습니다.'
-                : '실제 예약을 접수하려면 로그인하거나 비회원 정보를 등록해야 합니다.'}
+                ? t('미리보기에서는 고객 정보를 불러오거나 전송하지 않습니다.')
+                : t(memberBookingMessages.sign_in)}
             </Text>
           )}
         </Card>
 
+        {!createdBooking && !previewMode && membershipMessage ? (
+          <Card>
+            <Text style={styles.missingCustomer}>{t(membershipMessage)}</Text>
+            <Button label={token ? t('내 정보 확인') : t('로그인')} variant="secondary"
+              onPress={() => navigation.navigate(token ? 'Settings' : 'Login')} />
+          </Card>
+        ) : null}
+
         {submitError ? (
           <View style={styles.errorBox} accessibilityRole="alert">
             <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.errorText}>{submitError}</Text>
+            <Text style={styles.errorText}>{t(submitError)}</Text>
           </View>
         ) : null}
 
         <Button
           label={
             previewMode
-              ? '디자인 미리보기 · 접수 불가'
+              ? t('디자인 미리보기 · 접수 불가')
               : createdBooking
-                ? '첨부 파일 업로드 계속하기'
-                : '예약 접수'
+                ? t('첨부 파일 업로드 계속하기')
+                : t('예약 접수')
           }
           icon={createdBooking ? 'cloud-upload-outline' : 'checkmark-circle-outline'}
           onPress={() => void handleSubmit()}
           loading={isSubmitting}
-          disabled={(!createdBooking && (availabilityLoading || Boolean(availabilityError))) || previewMode || Boolean(configurationError)}
+          disabled={(!createdBooking && (availabilityLoading || Boolean(availabilityError) || membershipState !== 'ready')) || previewMode || Boolean(configurationError)}
           style={styles.submit}
         />
         <Text style={styles.submitNote}>
           {previewMode
-            ? 'API 연결 후 실제 카탈로그와 예약 가능 시간을 불러오면 접수 기능이 활성화됩니다.'
+            ? t('API 연결 후 실제 카탈로그와 예약 가능 시간을 불러오면 접수 기능이 활성화됩니다.')
             : createdBooking
-              ? '이미 접수된 예약은 다시 만들지 않고, 완료되지 않은 첨부 파일만 업로드합니다.'
-              : '접수 버튼을 다시 눌러도 같은 요청이 중복 생성되지 않도록 보호됩니다.'}
+              ? t('이미 접수된 예약은 다시 만들지 않고, 완료되지 않은 첨부 파일만 업로드합니다.')
+              : t('접수 버튼을 다시 눌러도 같은 요청이 중복 생성되지 않도록 보호됩니다.')}
         </Text>
       </View>
     </AppScreen>

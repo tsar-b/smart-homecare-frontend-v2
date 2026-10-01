@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from './Button';
 import { colors, fonts, spacing } from '../theme/tokens';
+import { t, useLocale } from '../i18n';
 
 type StateViewProps = {
   title: string;
@@ -21,6 +22,7 @@ export function StateView({
   actionLabel,
   onAction,
 }: StateViewProps) {
+  useLocale();
   return (
     <View style={styles.wrap} accessibilityRole={loading ? 'progressbar' : 'summary'}>
       {loading ? (
@@ -28,8 +30,8 @@ export function StateView({
       ) : (
         <Ionicons name={icon} size={34} color={colors.primary} />
       )}
-      <Text style={styles.title}>{title}</Text>
-      {message ? <Text style={styles.message}>{message}</Text> : null}
+      <Text style={styles.title}>{t(title)}</Text>
+      {message ? <Text style={styles.message}>{t(message)}</Text> : null}
       {actionLabel && onAction ? (
         <Button label={actionLabel} onPress={onAction} variant="secondary" fullWidth={false} style={styles.action} />
       ) : null}

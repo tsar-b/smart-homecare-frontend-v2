@@ -1,4 +1,5 @@
 import React from 'react';
+import { t, useLocale } from '../i18n';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +17,7 @@ export type BottomNavItem = {
 };
 
 export function BottomNav({ items }: { items: BottomNavItem[] }) {
+  useLocale();
   const insets = useSafeAreaInsets();
   return (
     <View
@@ -29,7 +31,7 @@ export function BottomNav({ items }: { items: BottomNavItem[] }) {
             key={item.key}
             onPress={item.onPress}
             accessibilityRole="tab"
-            accessibilityLabel={item.label}
+            accessibilityLabel={t(item.label)}
             accessibilityState={{ selected: Boolean(item.active) }}
             style={({ pressed }) => [styles.item, pressed && styles.pressed]}
           >
@@ -38,7 +40,7 @@ export function BottomNav({ items }: { items: BottomNavItem[] }) {
               size={22}
               color={color}
             />
-            <Text style={[styles.label, item.active && styles.labelActive]}>{item.label}</Text>
+            <Text style={[styles.label, item.active && styles.labelActive]}>{t(item.label)}</Text>
           </Pressable>
         );
       })}

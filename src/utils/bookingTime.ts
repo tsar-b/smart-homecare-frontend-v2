@@ -1,5 +1,6 @@
 // The booking API and its availability response use Asia/Seoul. Picker Date
 // objects represent calendar days in the device zone, not booking instants.
+import { formatMoney, getLocale } from '../i18n/store';
 const SEOUL_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 export function localDateKey(value: Date): string {
@@ -33,5 +34,6 @@ export function isPastBookingSlot(date: Date, time: string, now = new Date()): b
 }
 
 export function formatBookingPrice(value: number): string {
+  if (getLocale() === 'en') return formatMoney(value, 'KRW');
   return value === -1 ? '상담 후 안내' : `${value.toLocaleString('ko-KR')}원`;
 }

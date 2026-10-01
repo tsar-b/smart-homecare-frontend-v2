@@ -1,4 +1,5 @@
 import React from 'react';
+import { t, useLocale } from '../i18n';
 import {
   ActivityIndicator,
   Pressable,
@@ -52,6 +53,8 @@ export function Button({
   style,
   accessibilityHint,
 }: ButtonProps) {
+  useLocale();
+  label = t(label);
   const palette = variantStyles[variant];
   const inactive = disabled || loading;
 
@@ -77,7 +80,7 @@ export function Button({
       ) : (
         <>
           {icon ? <Ionicons name={icon} size={19} color={palette.text.color} style={styles.icon} /> : null}
-          <Text style={[styles.label, palette.text]}>{label}</Text>
+          <Text style={[styles.label, palette.text]}>{t(label)}</Text>
         </>
       )}
     </Pressable>

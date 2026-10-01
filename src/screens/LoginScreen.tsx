@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -14,6 +15,7 @@ import {
 import { customerSafeErrorMessage } from '../api';
 import { createSubmissionLock } from '../auth/submissionLock';
 import { isValidEmail } from '../auth/validation';
+import { useBrowserAuth } from '../auth/BrowserAuthContext';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
@@ -29,9 +31,11 @@ function toMessage(error: unknown): string {
 }
 
 export default function LoginScreen() {
+  useLocale();
   const navigation = useNavigation<LoginNavigation>();
   const route = useRoute<LoginRoute>();
   const { loginEmail, configurationError, sessionError } = useAuth();
+  const browser = useBrowserAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
@@ -45,6 +49,7 @@ export default function LoginScreen() {
   }, [email]);
 
   const handleLogin = async () => {
+    if (browser.busy) return;
     if (!email.trim() || !password || emailError) {
       setError('이메일과 비밀번호를 정확히 입력해 주세요.');
       return;
@@ -74,10 +79,9 @@ export default function LoginScreen() {
           </View>
           <Text style={styles.eyebrow}>SMART HOMECARE 2.0</Text>
         </View>
-        <Text style={styles.title}>집 관리가{`\n`}더 단순해집니다</Text>
+        <Text style={styles.title}>{t('집 관리가\n더 단순해집니다')}</Text>
         <Text style={styles.description}>
-          필요한 서비스를 고르고, 가능한 시간을 예약하고, 진행 상태를 한곳에서 확인하세요.
-        </Text>
+          {t("필요한 서비스를 고르고, 가능한 시간을 예약하고, 진행 상태를 한곳에서 확인하세요.")}</Text>
       </View>
 
       {configurationError ? (
@@ -85,14 +89,13 @@ export default function LoginScreen() {
           <View style={styles.noticeRow}>
             <Ionicons name="construct-outline" size={20} color={colors.primary} />
             <View style={styles.noticeCopy}>
-              <Text style={styles.noticeTitle}>디자인 미리보기 모드</Text>
+              <Text style={styles.noticeTitle}>{t("디자인 미리보기 모드")}</Text>
               <Text style={styles.noticeText}>
-                API 주소를 연결하면 로그인과 예약 데이터가 활성화됩니다.
-              </Text>
+                {t("API 주소를 연결하면 로그인과 예약 데이터가 활성화됩니다.")}</Text>
             </View>
           </View>
           <Button
-            label="디자인 데모 화면 보기"
+            label={t("디자인 데모 화면 보기")}
             variant="secondary"
             icon="eye-outline"
             onPress={() => navigation.navigate('Home')}
@@ -106,19 +109,19 @@ export default function LoginScreen() {
           <View style={styles.noticeRow} accessibilityRole="alert">
             <Ionicons name="mail-unread-outline" size={20} color={colors.primary} />
             <View style={styles.noticeCopy}>
-              <Text style={styles.noticeTitle}>이메일 확인이 필요합니다</Text>
-              <Text style={styles.noticeText}>{route.params.notice}</Text>
+              <Text style={styles.noticeTitle}>{t("이메일 확인이 필요합니다")}</Text>
+              <Text style={styles.noticeText}>{t(route.params.notice)}</Text>
             </View>
           </View>
         </Card>
       ) : null}
 
       <Card elevated style={styles.loginCard}>
-        <Text style={styles.cardTitle}>로그인</Text>
-        <Text style={styles.cardDescription}>예약 내역과 등록 정보를 안전하게 불러옵니다.</Text>
+        <Text style={styles.cardTitle}>{t("로그인")}</Text>
+        <Text style={styles.cardDescription}>{t("예약 내역과 등록 정보를 안전하게 불러옵니다.")}</Text>
 
         <FormField
-          label="이메일"
+          label={t("이메일")}
           value={email}
           onChangeText={value => {
             setEmail(value);
@@ -134,13 +137,13 @@ export default function LoginScreen() {
           error={emailError}
         />
         <FormField
-          label="비밀번호"
+          label={t("비밀번호")}
           value={password}
           onChangeText={value => {
             setPassword(value);
             setError(null);
           }}
-          placeholder="비밀번호 입력"
+          placeholder={t("비밀번호 입력")}
           secureTextEntry
           autoCapitalize="none"
           autoComplete="current-password"
@@ -152,26 +155,28 @@ export default function LoginScreen() {
         {displayedError ? (
           <View style={styles.errorBox} accessibilityRole="alert">
             <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.errorText}>{displayedError}</Text>
+            <Text style={styles.errorText}>{t(displayedError)}</Text>
           </View>
         ) : null}
 
         <Button
-          label="로그인"
+          label={t("로그인")}
           onPress={() => void handleLogin()}
           loading={pending}
-          disabled={Boolean(emailError)}
+          disabled={Boolean(emailError) || browser.busy}
         />
+        <Button label={t('비밀번호를 잊으셨나요?')} variant="ghost" disabled={pending || browser.busy || !browser.canRecover || Boolean(configurationError)} onPress={browser.openRecovery} />
 
         <View style={styles.registerRow}>
-          <Text style={styles.registerPrompt}>처음 이용하시나요?</Text>
+          <Text style={styles.registerPrompt}>{t("처음 이용하시나요?")}</Text>
           <Pressable
+            disabled={pending || browser.busy}
             onPress={() => navigation.navigate('Register')}
             accessibilityRole="button"
-            accessibilityLabel="회원가입"
+            accessibilityLabel={t("회원가입")}
             hitSlop={8}
           >
-            <Text style={styles.registerLink}>회원가입</Text>
+            <Text style={styles.registerLink}>{t("회원가입")}</Text>
           </Pressable>
         </View>
       </Card>
@@ -181,17 +186,26 @@ export default function LoginScreen() {
           <Ionicons name="phone-portrait-outline" size={20} color={colors.textMuted} />
         </View>
         <View style={styles.guestCopy}>
-          <Text style={styles.guestTitle}>비회원 접수 준비 중</Text>
+          <Text style={styles.guestTitle}>{t("비회원 접수 준비 중")}</Text>
           <Text style={styles.guestDescription}>
-            휴대전화 본인 인증과 서버 검증을 연결한 뒤 제공됩니다.
-          </Text>
+            {t("휴대전화 본인 인증과 서버 검증을 연결한 뒤 제공됩니다.")}</Text>
         </View>
         <Ionicons name="lock-closed-outline" size={19} color={colors.textMuted} />
       </Card>
 
-      <Text style={styles.socialNote}>
-        카카오 · Apple · Google 로그인은 V2 인증 연결 후 활성화됩니다.
-      </Text>
+      <View style={{ gap: spacing.sm }}>
+        {browser.providers.map(provider => <Button key={provider}
+          label={t(provider === 'kakao' ? '카카오로 계속' : provider === 'apple' ? 'Apple로 계속' : 'Google로 계속')}
+          variant="secondary" disabled={pending || browser.busy} loading={browser.busy}
+          onPress={() => void browser.startSocial(provider)} />)}
+        {!browser.configurationLoading && !browser.configurationError && !browser.providers.length ? <Text style={styles.socialNote}>{t('이 환경에서는 소셜 로그인이 설정되지 않았습니다. 이메일로 로그인해 주세요.')}</Text> : null}
+        {browser.configurationLoading ? <Text style={styles.socialNote}>{t('로그인 옵션을 확인하고 있습니다.')}</Text> : null}
+        {browser.configurationError ? <>
+          <Text accessibilityRole="alert" style={styles.errorText}>{t(browser.configurationError)}</Text>
+          <Button label={t('로그인 옵션 다시 확인')} variant="secondary" onPress={browser.refreshConfiguration} disabled={pending || browser.busy} />
+        </> : null}
+        {browser.error ? <Text accessibilityRole="alert" style={styles.errorText}>{t(browser.error)}</Text> : null}
+      </View>
     </AppScreen>
   );
 }

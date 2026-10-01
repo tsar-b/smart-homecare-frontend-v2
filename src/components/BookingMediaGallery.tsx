@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -16,12 +17,13 @@ interface BookingMediaGalleryProps {
 }
 
 function ImageThumbnail({ url }: { readonly url: string }) {
+  useLocale();
   const [failed, setFailed] = useState(false);
   if (failed) {
     return (
       <View style={[styles.preview, styles.placeholder]}>
         <Ionicons name="image-outline" size={38} color={colors.primary} />
-        <Text style={styles.size}>눌러서 사진 보기</Text>
+        <Text style={styles.size}>{t("눌러서 사진 보기")}</Text>
       </View>
     );
   }
@@ -38,8 +40,9 @@ export function BookingMediaGallery({
   deletingId = null,
   completingId = null,
 }: BookingMediaGalleryProps) {
+  useLocale();
   if (attachments.length === 0) {
-    return <Text style={styles.empty}>첨부된 사진이나 동영상이 없습니다.</Text>;
+    return <Text style={styles.empty}>{t("첨부된 사진이나 동영상이 없습니다.")}</Text>;
   }
 
   return (
@@ -52,7 +55,7 @@ export function BookingMediaGallery({
               onPress={() => ready && onOpen(attachment)}
               disabled={!ready}
               accessibilityRole="button"
-              accessibilityLabel={`${index + 1}번째 ${attachment.kind === 'image' ? '사진' : '동영상'} 열기`}
+              accessibilityLabel={`${index + 1}번째 ${attachment.kind === 'image' ? t('사진') : t('동영상')} 열기`}
               accessibilityState={{ disabled: !ready }}
               style={({ pressed }) => [styles.open, pressed && styles.pressed]}
             >
@@ -69,7 +72,7 @@ export function BookingMediaGallery({
               )}
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
-                  {attachment.kind === 'image' ? '사진' : '동영상'}
+                  {attachment.kind === 'image' ? t('사진') : t('동영상')}
                 </Text>
               </View>
             </Pressable>
@@ -86,12 +89,12 @@ export function BookingMediaGallery({
                   {completingId === attachment.id ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
-                    <Text style={styles.retryText}>처리 확인</Text>
+                    <Text style={styles.retryText}>{t("처리 확인")}</Text>
                   )}
                 </Pressable>
               ) : (
                 <Text style={[styles.status, ready ? styles.ready : styles.pending]}>
-                  {ready ? '보기' : attachment.status === 'rejected' ? '업로드 거부' : attachment.status === 'deleting' ? '삭제 중' : '처리 중'}
+                  {ready ? t('보기') : attachment.status === 'rejected' ? t('업로드 거부') : attachment.status === 'deleting' ? t('삭제 중') : t('처리 중')}
                 </Text>
               )}
             </View>

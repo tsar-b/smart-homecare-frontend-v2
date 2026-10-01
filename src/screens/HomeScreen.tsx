@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import React from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +35,7 @@ function QuickAction({
   onPress,
   accessibilityHint,
 }: QuickActionProps) {
+  useLocale();
   return (
     <Pressable
       onPress={onPress}
@@ -45,14 +47,15 @@ function QuickAction({
       <View style={styles.quickIcon}>
         <Ionicons name={icon} size={23} color={colors.primary} />
       </View>
-      <Text style={styles.quickTitle}>{title}</Text>
-      <Text style={styles.quickDescription}>{description}</Text>
+      <Text style={styles.quickTitle}>{t(title)}</Text>
+      <Text style={styles.quickDescription}>{t(description)}</Text>
       <Ionicons name="arrow-forward" size={18} color={colors.primary} style={styles.quickArrow} />
     </Pressable>
   );
 }
 
 export default function HomeScreen() {
+  useLocale();
   const navigation = useNavigation<HomeNav>();
   const route = useRoute<HomeRoute>();
   const { isGuestMode } = useAuth();
@@ -67,7 +70,7 @@ export default function HomeScreen() {
         {isGuest ? (
           <View style={styles.guestBadge}>
             <Ionicons name="person-outline" size={14} color={colors.primaryDark} />
-            <Text style={styles.guestBadgeText}>비회원 이용 중</Text>
+            <Text style={styles.guestBadgeText}>{t("비회원 이용 중")}</Text>
           </View>
         ) : null}
       </View>
@@ -77,38 +80,37 @@ export default function HomeScreen() {
           <Ionicons name="home-outline" size={25} color={colors.primaryDark} />
         </View>
         <Text style={styles.heroEyebrow}>SMART HOME SERVICE</Text>
-        <Text style={styles.heroTitle}>집에 필요한 케어를{`\n`}간편하게 예약하세요</Text>
+        <Text style={styles.heroTitle}>{t('집에 필요한 케어를\n간편하게 예약하세요')}</Text>
         <Text style={styles.heroDescription}>
-          가전 선택부터 방문 일정까지 한 번에 확인할 수 있습니다.
-        </Text>
+          {t("가전 선택부터 방문 일정까지 한 번에 확인할 수 있습니다.")}</Text>
         <Button
-          label="서비스 예약하기"
+          label={t("서비스 예약하기")}
           icon="calendar-outline"
           variant="secondary"
           onPress={startBooking}
-          accessibilityHint="가전 선택 단계로 이동합니다"
+          accessibilityHint={t("가전 선택 단계로 이동합니다")}
           style={styles.heroButton}
         />
       </View>
 
-      <SectionTitle style={styles.sectionTitle}>빠른 메뉴</SectionTitle>
+      <SectionTitle style={styles.sectionTitle}>{t("빠른 메뉴")}</SectionTitle>
       <View style={styles.quickGrid}>
         <View style={styles.quickCell}>
           <QuickAction
-            title="홈케어 소개"
-            description="서비스와 이용 방법을 살펴보세요."
+            title={t("홈케어 소개")}
+            description={t("서비스와 이용 방법을 살펴보세요.")}
             icon="globe-outline"
             onPress={() => void Linking.openURL('https://smarthomecare.kr')}
-            accessibilityHint="스마트홈케어 웹사이트를 엽니다"
+            accessibilityHint={t("스마트홈케어 웹사이트를 엽니다")}
           />
         </View>
         <View style={styles.quickCell}>
           <QuickAction
-            title="예약 내역"
-            description="신청한 서비스의 상태를 확인하세요."
+            title={t("예약 내역")}
+            description={t("신청한 서비스의 상태를 확인하세요.")}
             icon="receipt-outline"
             onPress={() => navigation.navigate('History')}
-            accessibilityHint="예약 내역 화면으로 이동합니다"
+            accessibilityHint={t("예약 내역 화면으로 이동합니다")}
           />
         </View>
       </View>
@@ -118,10 +120,9 @@ export default function HomeScreen() {
           <Ionicons name="shield-checkmark-outline" size={22} color={colors.success} />
         </View>
         <View style={styles.assuranceCopy}>
-          <Text style={styles.assuranceTitle}>예약 정보를 한눈에</Text>
+          <Text style={styles.assuranceTitle}>{t("예약 정보를 한눈에")}</Text>
           <Text style={styles.assuranceText}>
-            선택한 서비스, 예상 가격, 방문 일정을 예약 전에 다시 확인할 수 있습니다.
-          </Text>
+            {t("선택한 서비스, 예상 가격, 방문 일정을 예약 전에 다시 확인할 수 있습니다.")}</Text>
         </View>
       </View>
     </AppScreen>

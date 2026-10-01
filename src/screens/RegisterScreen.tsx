@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -40,6 +41,7 @@ function toMessage(error: unknown): string {
 }
 
 export default function RegisterScreen({ navigation, route }: Props) {
+  useLocale();
   const isGuest = route.params?.isGuest ?? false;
   const { registerAccount } = useAuth();
 
@@ -67,31 +69,30 @@ export default function RegisterScreen({ navigation, route }: Props) {
     }
   }, [route.params?.selectedAddress, route.params?.selectedAddressDetail]);
 
-  const title = isGuest ? '비회원 접수 정보' : '회원가입';
+  const title = isGuest ? t('비회원 접수 정보') : t('회원가입');
   const description = isGuest
-    ? '방문 예약에 필요한 최소 정보만 받습니다.'
-    : '예약 확인과 주소 관리를 위한 계정을 만드세요.';
+    ? t('방문 예약에 필요한 최소 정보만 받습니다.')
+    : t('예약 확인과 주소 관리를 위한 계정을 만드세요.');
 
   const passwordStrength = useMemo(() => registrationPasswordError(password), [password]);
 
   if (isGuest) {
     return (
       <AppScreen padded={false}>
-        <AppHeader title="비회원 접수" onBack={() => navigation.goBack()} />
+        <AppHeader title={t("비회원 접수")} onBack={() => navigation.goBack()} />
         <View style={styles.content}>
           <PageIntro
-            title="비회원 접수는 준비 중입니다"
-            description="전화번호 소유 확인과 서버 측 검증이 완료되기 전에는 개인정보를 등록하거나 예약을 접수하지 않습니다."
+            title={t("비회원 접수는 준비 중입니다")}
+            description={t("전화번호 소유 확인과 서버 측 검증이 완료되기 전에는 개인정보를 등록하거나 예약을 접수하지 않습니다.")}
           />
           <Card style={styles.formCard}>
             <View style={styles.unavailableRow} accessibilityRole="alert">
               <Ionicons name="shield-outline" size={22} color={colors.primary} />
               <Text style={styles.unavailableText}>
-                휴대전화 OTP 인증과 악용 방지 절차를 구현한 뒤 이 기능을 활성화합니다.
-              </Text>
+                {t("휴대전화 OTP 인증과 악용 방지 절차를 구현한 뒤 이 기능을 활성화합니다.")}</Text>
             </View>
             <Button
-              label="로그인 화면으로 돌아가기"
+              label={t("로그인 화면으로 돌아가기")}
               variant="secondary"
               icon="arrow-back-outline"
               onPress={() => navigation.replace('Login')}
@@ -129,8 +130,8 @@ export default function RegisterScreen({ navigation, route }: Props) {
       if (result.requiresEmailConfirmation) {
         Toast.show({
           type: 'info',
-          text1: '이메일 확인이 필요합니다',
-          text2: '메일의 확인 링크를 연 뒤 로그인해 주세요.',
+          text1: t('이메일 확인이 필요합니다'),
+          text2: t('메일의 확인 링크를 연 뒤 로그인해 주세요.'),
         });
         navigation.replace('Login', {
           notice: '가입 이메일로 보낸 확인 링크를 연 뒤 로그인해 주세요.',
@@ -139,8 +140,8 @@ export default function RegisterScreen({ navigation, route }: Props) {
       }
       Toast.show({
         type: 'success',
-        text1: '회원가입이 완료되었습니다',
-        text2: '새 계정으로 로그인되었습니다.',
+        text1: t('회원가입이 완료되었습니다'),
+        text2: t('새 계정으로 로그인되었습니다.'),
       });
     } catch (error) {
       setFormError(toMessage(error));
@@ -158,14 +159,14 @@ export default function RegisterScreen({ navigation, route }: Props) {
 
         <Card style={styles.formCard}>
           <FormField
-            label="이름"
+            label={t("이름")}
             value={name}
             onChangeText={value => {
               setName(value);
               setFormError(null);
               setErrors(current => ({ ...current, name: undefined }));
             }}
-            placeholder="이름 입력"
+            placeholder={t("이름 입력")}
             autoComplete="name"
             textContentType="name"
             returnKeyType="next"
@@ -173,7 +174,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
           />
 
           <FormField
-            label="전화번호"
+            label={t("전화번호")}
             value={phone}
             onChangeText={value => {
               setPhone(formatPhone(value));
@@ -191,7 +192,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
           {!isGuest ? (
             <>
               <FormField
-                label="이메일"
+                label={t("이메일")}
                 value={email}
                 onChangeText={value => {
                   setEmail(value);
@@ -208,14 +209,14 @@ export default function RegisterScreen({ navigation, route }: Props) {
                 error={errors.email}
               />
               <FormField
-                label="비밀번호"
+                label={t("비밀번호")}
                 value={password}
                 onChangeText={value => {
                   setPassword(value);
                   setFormError(null);
                   setErrors(current => ({ ...current, password: undefined, confirm: undefined }));
                 }}
-                placeholder="영문과 숫자를 포함한 8자 이상"
+                placeholder={t("영문과 숫자를 포함한 8자 이상")}
                 secureTextEntry
                 autoCapitalize="none"
                 autoComplete="new-password"
@@ -225,14 +226,14 @@ export default function RegisterScreen({ navigation, route }: Props) {
                 error={errors.password}
               />
               <FormField
-                label="비밀번호 확인"
+                label={t("비밀번호 확인")}
                 value={confirmPassword}
                 onChangeText={value => {
                   setConfirmPassword(value);
                   setFormError(null);
                   setErrors(current => ({ ...current, confirm: undefined }));
                 }}
-                placeholder="비밀번호 다시 입력"
+                placeholder={t("비밀번호 다시 입력")}
                 secureTextEntry
                 autoCapitalize="none"
                 autoComplete="new-password"
@@ -243,13 +244,13 @@ export default function RegisterScreen({ navigation, route }: Props) {
             </>
           ) : (
             <>
-              <Text style={styles.fieldLabel}>방문 주소</Text>
+              <Text style={styles.fieldLabel}>{t("방문 주소")}</Text>
               <Pressable
                 onPress={() =>
                   navigation.navigate('AddressSearchScreen', { returnTo: 'Register' })
                 }
                 accessibilityRole="button"
-                accessibilityLabel="방문 주소 검색"
+                accessibilityLabel={t("방문 주소 검색")}
                 style={({ pressed }) => [
                   styles.addressButton,
                   errors.address && styles.addressButtonError,
@@ -262,12 +263,12 @@ export default function RegisterScreen({ navigation, route }: Props) {
                 </Text>
                 <Ionicons name="search-outline" size={19} color={colors.textMuted} />
               </Pressable>
-              {errors.address ? <Text style={styles.fieldError}>{errors.address}</Text> : null}
+              {errors.address ? <Text style={styles.fieldError}>{t(errors.address)}</Text> : null}
               <FormField
-                label="상세 주소"
+                label={t("상세 주소")}
                 value={addressDetail}
                 onChangeText={setAddressDetail}
-                placeholder="동 · 호수 등 (선택)"
+                placeholder={t("동 · 호수 등 (선택)")}
                 autoComplete="street-address"
                 textContentType="fullStreetAddress"
                 returnKeyType="done"
@@ -283,27 +284,26 @@ export default function RegisterScreen({ navigation, route }: Props) {
             }}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: agreed }}
-            accessibilityLabel="서비스 이용 및 개인정보 처리 동의"
+            accessibilityLabel={t("서비스 이용 및 개인정보 처리 동의")}
             style={({ pressed }) => [styles.consent, pressed && styles.pressed]}
           >
             <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
               {agreed ? <Ionicons name="checkmark" size={16} color={colors.white} /> : null}
             </View>
             <Text style={styles.consentText}>
-              서비스 이용 및 예약 처리를 위한 개인정보 수집에 동의합니다.
-            </Text>
+              {t("서비스 이용 및 예약 처리를 위한 개인정보 수집에 동의합니다.")}</Text>
           </Pressable>
-          {errors.terms ? <Text style={styles.fieldError}>{errors.terms}</Text> : null}
+          {errors.terms ? <Text style={styles.fieldError}>{t(errors.terms)}</Text> : null}
 
           {formError ? (
             <View style={styles.formError} accessibilityRole="alert">
               <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-              <Text style={styles.formErrorText}>{formError}</Text>
+              <Text style={styles.formErrorText}>{t(formError)}</Text>
             </View>
           ) : null}
 
           <Button
-            label={isGuest ? '비회원 정보 등록' : '계정 만들기'}
+            label={isGuest ? t('비회원 정보 등록') : t('계정 만들기')}
             onPress={() => void handleSubmit()}
             loading={pending}
             style={styles.submit}
@@ -313,8 +313,7 @@ export default function RegisterScreen({ navigation, route }: Props) {
         <View style={styles.privacyNote}>
           <Ionicons name="shield-checkmark-outline" size={18} color={colors.success} />
           <Text style={styles.privacyText}>
-            입력한 정보는 계정 관리와 서비스 방문 예약에만 사용됩니다.
-          </Text>
+            {t("입력한 정보는 계정 관리와 서비스 방문 예약에만 사용됩니다.")}</Text>
         </View>
       </View>
     </AppScreen>

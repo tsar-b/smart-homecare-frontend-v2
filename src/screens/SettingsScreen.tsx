@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -42,6 +43,7 @@ function providerLabel(provider: string | null): string {
     case 'guest': return '비회원 계정';
     case 'kakao': return '카카오 계정';
     case 'apple': return 'Apple 계정';
+    case 'google': return 'Google 계정';
     default: return provider ? `${provider} 계정` : '계정 정보 없음';
   }
 }
@@ -55,6 +57,7 @@ function displayPhone(phone: string | null): string {
 }
 
 function SettingsScreen() {
+  useLocale();
   const navigation = useNavigation<SettingsNavigation>();
   const route = useRoute<SettingsRoute>();
   const {
@@ -131,6 +134,9 @@ function SettingsScreen() {
         );
         if (!active) return;
         setProfile((current) => current ? { ...current, ...updated } : current);
+        // Refresh shared booking defaults after an address change as well as
+        // after name/phone edits. Do not resubmit the successful update.
+        await refreshProfile().catch(() => null);
       } catch (caught) {
         if (active) {
           const message = settingsErrorMessage(caught);
@@ -149,7 +155,7 @@ function SettingsScreen() {
       active = false;
       controller.abort();
     };
-  }, [api, configurationError, navigation, selectedAddress, selectedAddressDetail]);
+  }, [api, configurationError, navigation, refreshProfile, selectedAddress, selectedAddressDetail]);
 
   const startEditing = (field: EditableField) => {
     if (loading || savingFieldRef.current || savingAddress || accountAction) return;
@@ -220,8 +226,8 @@ function SettingsScreen() {
   if (loading && !profile) {
     return (
       <AppScreen padded={false} footer={<CustomerBottomNav active="Settings" />}>
-        <AppHeader title="내 정보" showBrand />
-        <StateView title="내 정보를 불러오는 중입니다" loading />
+        <AppHeader title={t("내 정보")} showBrand />
+        <StateView title={t("내 정보를 불러오는 중입니다")} loading />
       </AppScreen>
     );
   }
@@ -229,12 +235,12 @@ function SettingsScreen() {
   if (!profile) {
     return (
       <AppScreen padded={false} footer={<CustomerBottomNav active="Settings" />}>
-        <AppHeader title="내 정보" showBrand />
+        <AppHeader title={t("내 정보")} showBrand />
         <StateView
-          title="내 정보를 불러오지 못했습니다"
+          title={t("내 정보를 불러오지 못했습니다")}
           message={error ?? configurationError ?? '로그인 상태를 확인해 주세요.'}
           icon="person-circle-outline"
-          actionLabel="다시 시도"
+          actionLabel={t("다시 시도")}
           onAction={() => {
             setLoading(true);
             void refreshProfile()
@@ -254,21 +260,21 @@ function SettingsScreen() {
 
   return (
     <AppScreen padded={false} scroll footer={<CustomerBottomNav active="Settings" />} keyboardAware>
-      <AppHeader title="내 정보" showBrand />
+      <AppHeader title={t("내 정보")} showBrand />
       <View style={styles.content}>
         <PageIntro
-          title={`${profile.name ?? '고객'}님`}
-          description="예약에 사용할 연락처와 방문 주소를 관리하세요."
+          title={t('{name}님', { name: profile.name ?? t('고객') })}
+          description={t("예약에 사용할 연락처와 방문 주소를 관리하세요.")}
         />
 
         {error ? (
           <View style={styles.errorBanner} accessibilityRole="alert">
             <Ionicons name="warning-outline" size={19} color={colors.danger} />
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>{t(error)}</Text>
             <Pressable
               onPress={() => setError(null)}
               accessibilityRole="button"
-              accessibilityLabel="오류 메시지 닫기"
+              accessibilityLabel={t("오류 메시지 닫기")}
               hitSlop={8}
             >
               <Ionicons name="close" size={20} color={colors.danger} />
@@ -276,19 +282,19 @@ function SettingsScreen() {
           </View>
         ) : null}
 
-        <SectionTitle>기본 정보</SectionTitle>
+        <SectionTitle>{t("기본 정보")}</SectionTitle>
         <Card style={styles.sectionCard}>
           <SettingRow
             icon="person-outline"
-            label="이름"
-            value={profile.name ?? '미등록'}
-            actionLabel="변경"
+            label={t("이름")}
+            value={profile.name ?? t('미등록')}
+            actionLabel={t("변경")}
             disabled={loading || savingField || savingAddress || accountAction !== null}
             onPress={() => startEditing('name')}
           />
           {editing === 'name' ? (
             <EditPanel
-              label="이름"
+              label={t("이름")}
               value={editValue}
               onChange={setEditValue}
               error={fieldError}
@@ -300,15 +306,15 @@ function SettingsScreen() {
 
           <SettingRow
             icon="call-outline"
-            label="연락처"
-            value={displayPhone(profile.phone)}
-            actionLabel="변경"
+            label={t("연락처")}
+            value={profile.phone ? displayPhone(profile.phone) : t('미등록')}
+            actionLabel={t("변경")}
             disabled={loading || savingField || savingAddress || accountAction !== null}
             onPress={() => startEditing('phone')}
           />
           {editing === 'phone' ? (
             <EditPanel
-              label="연락처"
+              label={t("연락처")}
               value={editValue}
               onChange={setEditValue}
               error={fieldError}
@@ -321,29 +327,29 @@ function SettingsScreen() {
 
           <SettingRow
             icon="location-outline"
-            label="방문 주소"
-            value={fullAddress || '미등록'}
-            actionLabel={savingAddress ? '저장 중' : '변경'}
+            label={t("방문 주소")}
+            value={fullAddress || t('미등록')}
+            actionLabel={savingAddress ? t('저장 중') : t('변경')}
             disabled={loading || savingAddress || savingField || accountAction !== null}
             onPress={() => navigation.navigate('AddressSearchScreen', { returnTo: 'Settings' })}
           />
         </Card>
 
-        <SectionTitle style={styles.sectionTitle}>계정</SectionTitle>
+        <SectionTitle style={styles.sectionTitle}>{t("계정")}</SectionTitle>
         <Card style={styles.sectionCard}>
           <SettingRow
             icon="key-outline"
-            label="로그인 방식"
-            value={providerLabel(profile.provider)}
+            label={t("로그인 방식")}
+            value={t(providerLabel(profile.provider))}
           />
           {profile.email ? (
-            <SettingRow icon="mail-outline" label="이메일" value={profile.email} />
+            <SettingRow icon="mail-outline" label={t("이메일")} value={profile.email} />
           ) : null}
         </Card>
 
         <View style={styles.accountActions}>
           <Button
-            label={profile.isGuest ? '비회원 세션 종료' : '로그아웃'}
+            label={profile.isGuest ? t('비회원 세션 종료') : t('로그아웃')}
             icon="log-out-outline"
             variant="ghost"
             loading={accountAction === 'logout'}
@@ -351,16 +357,14 @@ function SettingsScreen() {
             onPress={() => void handleLogout()}
           />
           <Button
-            label="계정 삭제 준비 중"
+            label={t("계정 삭제 준비 중")}
             icon="lock-closed-outline"
             variant="secondary"
             disabled
             onPress={() => undefined}
           />
           <Text style={styles.deleteHelp}>
-            현재 앱에서는 계정 삭제를 제공하지 않습니다. 예약 및 운영 기록을 함께 처리하는
-            서버 측 트랜잭션 삭제·익명화 절차가 준비된 뒤 활성화됩니다.
-          </Text>
+            {t("현재 앱에서는 계정 삭제를 제공하지 않습니다. 예약 및 운영 기록을 함께 처리하는 서버 측 트랜잭션 삭제·익명화 절차가 준비된 뒤 활성화됩니다.")}</Text>
         </View>
       </View>
     </AppScreen>
@@ -382,6 +386,7 @@ function SettingRow({
   onPress?: () => void;
   disabled?: boolean;
 }) {
+  useLocale();
   return (
     <Pressable
       onPress={onPress}
@@ -399,7 +404,7 @@ function SettingRow({
         <Ionicons name={icon} size={20} color={colors.primary} />
       </View>
       <View style={styles.rowCopy}>
-        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.rowLabel}>{t(label)}</Text>
         <Text style={styles.rowValue} numberOfLines={2}>{value}</Text>
       </View>
       {actionLabel ? (
@@ -431,10 +436,11 @@ function EditPanel({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  useLocale();
   return (
     <View style={styles.editPanel}>
       <FormField
-        label={`${label} 수정`}
+        label={t('{field} 수정', { field: t(label) })}
         value={value}
         onChangeText={onChange}
         error={error ?? undefined}
@@ -445,8 +451,8 @@ function EditPanel({
         onSubmitEditing={onSave}
       />
       <View style={styles.editActions}>
-        <Button label="취소" variant="ghost" fullWidth={false} disabled={saving} onPress={onCancel} style={styles.editButton} />
-        <Button label="저장" fullWidth={false} loading={saving} onPress={onSave} style={styles.editButton} />
+        <Button label={t("취소")} variant="ghost" fullWidth={false} disabled={saving} onPress={onCancel} style={styles.editButton} />
+        <Button label={t("저장")} fullWidth={false} loading={saving} onPress={onSave} style={styles.editButton} />
       </View>
     </View>
   );

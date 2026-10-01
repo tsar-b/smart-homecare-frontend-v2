@@ -70,6 +70,15 @@ export function customerSafeErrorMessage(
   if (error.code === 'EMAIL_CONFIRMATION_REQUIRED') {
     return '가입 이메일의 확인 링크를 연 뒤 다시 로그인해 주세요.';
   }
+  if (error.code === 'INVALID_LOGIN') {
+    return '이메일 또는 비밀번호가 올바르지 않습니다.';
+  }
+  if (error.code === 'AUTH_SERVICE_UNAVAILABLE' || error.code === 'EMAIL_LOGIN_UNAVAILABLE') {
+    return '이메일 로그인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  if (error.code === 'ACCOUNT_UNAVAILABLE') {
+    return '이 계정으로 로그인할 수 없습니다. 고객 지원에 문의해 주세요.';
+  }
   if (error.status === 401) {
     return '로그인 정보가 올바르지 않거나 세션이 만료되었습니다.';
   }

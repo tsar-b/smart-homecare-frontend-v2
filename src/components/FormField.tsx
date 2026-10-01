@@ -1,4 +1,5 @@
 import React from 'react';
+import { t, useLocale } from '../i18n';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { colors, fonts, layout, radius, spacing } from '../theme/tokens';
 
@@ -9,16 +10,18 @@ type FormFieldProps = TextInputProps & {
 };
 
 export function FormField({ label, error, helper, style, ...props }: FormFieldProps) {
+  useLocale();
   return (
     <View style={styles.group}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>{t(label)}</Text>
       <TextInput
         {...props}
+        placeholder={props.placeholder ? t(props.placeholder) : undefined}
         style={[styles.input, props.multiline && styles.multiline, error && styles.inputError, style]}
         placeholderTextColor={colors.disabled}
-        accessibilityLabel={label}
+        accessibilityLabel={t(label)}
       />
-      {error ? <Text style={styles.error}>{error}</Text> : helper ? <Text style={styles.helper}>{helper}</Text> : null}
+      {error ? <Text style={styles.error}>{t(error)}</Text> : helper ? <Text style={styles.helper}>{t(helper)}</Text> : null}
     </View>
   );
 }

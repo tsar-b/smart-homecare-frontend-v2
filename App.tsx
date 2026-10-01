@@ -3,6 +3,7 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
+import { BrowserAuthProvider } from './src/auth/BrowserAuthContext';
 import { useFonts } from 'expo-font';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Toast from 'react-native-toast-message';
@@ -38,7 +39,7 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style="dark" backgroundColor={colors.background} />
-        <AppNavigator />
+        <BrowserAuthProvider><AppNavigator /></BrowserAuthProvider>
         <Toast />
       </AuthProvider>
     </SafeAreaProvider>

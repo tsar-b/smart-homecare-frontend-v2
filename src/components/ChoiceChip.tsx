@@ -1,4 +1,5 @@
 import React from 'react';
+import { t, useLocale } from '../i18n';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
 
@@ -10,6 +11,8 @@ type ChoiceChipProps = {
 };
 
 export function ChoiceChip({ label, selected = false, disabled = false, onPress }: ChoiceChipProps) {
+  useLocale();
+  label = t(label);
   return (
     <Pressable
       onPress={onPress}

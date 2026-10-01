@@ -54,6 +54,7 @@ interface AuthContextType {
   refreshProfile: () => Promise<ClientUser | null>;
   registerAccount: (input: RegisterAccountInput) => Promise<RegistrationResult>;
   loginEmail: (email: string, password: string) => Promise<void>;
+  loginOAuth: (input: { provider: 'kakao' | 'apple' | 'google'; code: string; codeVerifier: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -407,6 +408,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [apiResult.api, clearSession]);
 
+  const loginOAuth = useCallback(async (input: { provider: 'kakao' | 'apple' | 'google'; code: string; codeVerifier: string }) => {
+    const generation = ++sessionGeneration.current;
+    setSessionError(null);
+    const session = await requireApi().auth.exchangeOAuth(input);
+    await activateSession(session, generation);
+  }, [activateSession, requireApi]);
+
   const value = useMemo<AuthContextType>(
     () => ({
       token,
@@ -421,6 +429,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       refreshProfile,
       registerAccount,
       loginEmail,
+      loginOAuth,
       logout,
     }),
     [
@@ -430,6 +439,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isGuestMode,
       isLoading,
       loginEmail,
+      loginOAuth,
       logout,
       refreshProfile,
       registerAccount,

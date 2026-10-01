@@ -1,3 +1,4 @@
+import { t, useLocale, formatMoney } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -131,14 +132,14 @@ function mediaErrorMessage(error: unknown, fallback: string): string {
 }
 
 function formatPrice(price: number | null): string {
-  if (price === null || price < 0) return '가격 문의';
-  return `${price.toLocaleString('ko-KR')}원`;
+  if (price === null || price < 0) return t('가격 문의');
+  return formatMoney(price, 'KRW');
 }
 
 function formatDate(date: string | null): string {
-  if (!date) return '일정 미정';
+  if (!date) return t('일정 미정');
   const parsed = dayjs(date);
-  return parsed.isValid() ? parsed.format('YYYY년 M월 D일') : date;
+  return parsed.isValid() ? parsed.format(t('YYYY년 M월 D일')) : date;
 }
 
 function requestToDetail(request: ServiceRequest, catalog: AppCatalog | null): DetailView {
@@ -228,6 +229,7 @@ function normalizedAdminStatus(status: string): AdminManagedStatus | null {
 }
 
 function BookingDetailScreen() {
+  useLocale();
   const navigation = useNavigation<DetailNavigation>();
   const { bookingId, viewMode = 'customer' } = useRoute<DetailRoute>().params;
   const isAdminView = viewMode === 'admin';
@@ -316,7 +318,7 @@ function BookingDetailScreen() {
             if (!active) return;
             const message = mediaErrorMessage(
               caught,
-              '첨부 파일을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+              t('첨부 파일을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
             );
             if (message) setAttachmentsError(message);
           })
@@ -386,7 +388,7 @@ function BookingDetailScreen() {
           if (controller.signal.aborted) return;
           const message = mediaErrorMessage(
             caught,
-            '첨부 파일의 안전한 보기 주소를 만들지 못했습니다. 다시 열어 주세요.',
+            t('첨부 파일의 안전한 보기 주소를 만들지 못했습니다. 다시 열어 주세요.'),
           );
           if (message) setViewerError(message);
         })
@@ -416,12 +418,12 @@ function BookingDetailScreen() {
       }
 
       Alert.alert(
-        '첨부 파일을 삭제할까요?',
-        '삭제한 사진이나 동영상은 복구할 수 없습니다.',
+        t('첨부 파일을 삭제할까요?'),
+        t('삭제한 사진이나 동영상은 복구할 수 없습니다.'),
         [
-          { text: '아니요', style: 'cancel' },
+          { text: t('아니요'), style: 'cancel' },
           {
-            text: '삭제',
+            text: t('삭제'),
             style: 'destructive',
             onPress: () => {
               setDeletingAttachmentId(attachment.id);
@@ -435,7 +437,7 @@ function BookingDetailScreen() {
                 .catch((caught) => {
                   const message = mediaErrorMessage(
                     caught,
-                    '첨부 파일을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+                    t('첨부 파일을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
                   );
                   if (message) setMediaActionError(message);
                 })
@@ -489,14 +491,14 @@ function BookingDetailScreen() {
           } catch (refreshError) {
             const message = mediaErrorMessage(
               refreshError,
-              '첨부 파일 상태를 새로 고치지 못했습니다. 잠시 후 다시 시도해 주세요.',
+              t('첨부 파일 상태를 새로 고치지 못했습니다. 잠시 후 다시 시도해 주세요.'),
             );
             if (message) setMediaActionError(message);
           }
         } else {
           const message = mediaErrorMessage(
             caught,
-            '첨부 파일 처리를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+            t('첨부 파일 처리를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
           );
           if (message) setMediaActionError(message);
         }
@@ -644,7 +646,7 @@ function BookingDetailScreen() {
           if (!retryable) filesToReselect += 1;
           const message = mediaErrorMessage(
             caught,
-            '첨부 파일을 업로드하지 못했습니다. 다시 시도해 주세요.',
+            t('첨부 파일을 업로드하지 못했습니다. 다시 시도해 주세요.'),
           );
           setLocalMediaUploadState((current) => ({
             ...current,
@@ -682,7 +684,7 @@ function BookingDetailScreen() {
       if (!controller.signal.aborted) {
         const message = mediaErrorMessage(
           caught,
-          '첨부 파일 업로드를 완료하지 못했습니다. 다시 시도해 주세요.',
+          t('첨부 파일 업로드를 완료하지 못했습니다. 다시 시도해 주세요.'),
         );
         if (message) setMediaActionError(message);
       }
@@ -718,12 +720,12 @@ function BookingDetailScreen() {
     }
 
     Alert.alert(
-      '예약을 취소할까요?',
-      '예약을 취소하면 선택한 방문 시간이 다시 열릴 수 있습니다.',
+      t('예약을 취소할까요?'),
+      t('예약을 취소하면 선택한 방문 시간이 다시 열릴 수 있습니다.'),
       [
-        { text: '아니요', style: 'cancel' },
+        { text: t('아니요'), style: 'cancel' },
         {
-          text: '예약 취소',
+          text: t('예약 취소'),
           style: 'destructive',
           onPress: () => {
             setCancelling(true);
@@ -758,12 +760,12 @@ function BookingDetailScreen() {
       if (normalizedAdminStatus(detail.status) === nextStatus) return;
 
       Alert.alert(
-        '예약 상태 변경',
+        t('예약 상태 변경'),
         `이 예약을 ${ADMIN_STATUS_LABELS[nextStatus]} 상태로 저장할까요?`,
         [
-          { text: '아니요', style: 'cancel' },
+          { text: t('아니요'), style: 'cancel' },
           {
-            text: '변경',
+            text: t('변경'),
             onPress: () => {
               setUpdatingAdminStatus(nextStatus);
               setAdminActionError(null);
@@ -783,7 +785,7 @@ function BookingDetailScreen() {
                 .catch(caught => {
                   const message = customerSafeErrorMessage(
                     caught,
-                    '예약 상태를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+                    t('예약 상태를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.'),
                   );
                   if (message) setAdminActionError(message);
                 })
@@ -799,8 +801,8 @@ function BookingDetailScreen() {
   if ((loading && !detail) || (detail !== null && detail.id !== bookingId)) {
     return (
       <AppScreen padded={false}>
-        <AppHeader title={isAdminView ? '예약 관리 상세' : '예약 상세'} onBack={() => navigation.goBack()} />
-        <StateView title="예약 정보를 불러오는 중입니다" loading />
+        <AppHeader title={isAdminView ? t('예약 관리 상세') : t('예약 상세')} onBack={() => navigation.goBack()} />
+        <StateView title={t("예약 정보를 불러오는 중입니다")} loading />
       </AppScreen>
     );
   }
@@ -808,12 +810,12 @@ function BookingDetailScreen() {
   if (error || !detail) {
     return (
       <AppScreen padded={false}>
-        <AppHeader title={isAdminView ? '예약 관리 상세' : '예약 상세'} onBack={() => navigation.goBack()} />
+        <AppHeader title={isAdminView ? t('예약 관리 상세') : t('예약 상세')} onBack={() => navigation.goBack()} />
         <StateView
-          title="예약 정보를 확인할 수 없습니다"
+          title={t("예약 정보를 확인할 수 없습니다")}
           message={error ?? '예약 정보가 존재하지 않습니다.'}
           icon="document-text-outline"
-          actionLabel="다시 시도"
+          actionLabel={t("다시 시도")}
           onAction={retry}
         />
       </AppScreen>
@@ -827,60 +829,60 @@ function BookingDetailScreen() {
   return (
     <>
       <AppScreen padded={false} scroll>
-        <AppHeader title={isAdminView ? '예약 관리 상세' : '예약 상세'} onBack={() => navigation.goBack()} />
+        <AppHeader title={isAdminView ? t('예약 관리 상세') : t('예약 상세')} onBack={() => navigation.goBack()} />
         <View style={styles.content}>
         <PageIntro
           title={detail.service}
           description={
             isAdminView
-              ? '고객의 예약 내용과 진행 상태를 확인하고 관리하세요.'
-              : '예약 내용과 현재 진행 상태를 확인하세요.'
+              ? t('고객의 예약 내용과 진행 상태를 확인하고 관리하세요.')
+              : t('예약 내용과 현재 진행 상태를 확인하세요.')
           }
         />
 
         <Card style={styles.summaryCard} elevated>
           <View style={styles.summaryHeading}>
             <View style={styles.summaryTitleWrap}>
-              <Text style={styles.summaryEyebrow}>예약 번호</Text>
+              <Text style={styles.summaryEyebrow}>{t("예약 번호")}</Text>
               <Text style={styles.reference} selectable numberOfLines={1}>{detail.id}</Text>
             </View>
             <StatusBadge status={detail.status} />
           </View>
           <View style={styles.priceBlock}>
-            <Text style={styles.priceLabel}>서버 확정 금액</Text>
+            <Text style={styles.priceLabel}>{t("서버 확정 금액")}</Text>
             <Text style={styles.price}>{formatPrice(detail.totalPrice)}</Text>
           </View>
         </Card>
 
-        <Section title="방문 일정">
-          <InfoRow icon="calendar-outline" label="예약 일시" value={schedule} />
+        <Section title={t("방문 일정")}>
+          <InfoRow icon="calendar-outline" label={t("예약 일시")} value={schedule} />
           {detail.createdAt ? (
-            <InfoRow icon="receipt-outline" label="접수 일시" value={formatDate(detail.createdAt)} />
+            <InfoRow icon="receipt-outline" label={t("접수 일시")} value={formatDate(detail.createdAt)} />
           ) : null}
         </Section>
 
-        <Section title="서비스 정보">
-          <InfoRow icon="construct-outline" label="서비스" value={detail.service} />
+        <Section title={t("서비스 정보")}>
+          <InfoRow icon="construct-outline" label={t("서비스")} value={detail.service} />
           {detail.subtype && detail.subtype !== detail.service ? (
-            <InfoRow icon="cube-outline" label="기기 유형" value={detail.subtype} />
+            <InfoRow icon="cube-outline" label={t("기기 유형")} value={detail.subtype} />
           ) : null}
-          {detail.tier ? <InfoRow icon="layers-outline" label="서비스 등급" value={detail.tier} /> : null}
+          {detail.tier ? <InfoRow icon="layers-outline" label={t("서비스 등급")} value={detail.tier} /> : null}
         </Section>
 
         {detail.options.length > 0 ? (
-          <Section title="선택 옵션">
+          <Section title={t("선택 옵션")}>
             {detail.options.map((option) => (
               <View key={option.key} style={styles.optionRow}>
                 <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                 <View style={styles.optionCopy}>
-                  <Text style={styles.optionLabel}>{option.label}</Text>
+                  <Text style={styles.optionLabel}>{t(option.label)}</Text>
                   {option.value ? <Text style={styles.optionValue}>{option.value}</Text> : null}
                 </View>
                 {option.extraCost !== undefined ? (
                   <Text style={styles.optionPrice}>
                     {option.extraCost > 0
-                      ? `+${option.extraCost.toLocaleString('ko-KR')}원`
-                      : '추가 금액 없음'}
+                      ? `+${formatMoney(option.extraCost, 'KRW')}`
+                      : t('추가 금액 없음')}
                   </Text>
                 ) : null}
               </View>
@@ -889,37 +891,37 @@ function BookingDetailScreen() {
         ) : null}
 
         {(detail.customerName || detail.phone || fullAddress) ? (
-          <Section title="예약자 정보">
-            {detail.customerName ? <InfoRow icon="person-outline" label="예약자" value={detail.customerName} /> : null}
-            {detail.phone ? <InfoRow icon="call-outline" label="연락처" value={detail.phone} selectable /> : null}
-            {fullAddress ? <InfoRow icon="location-outline" label="방문 주소" value={fullAddress} selectable /> : null}
+          <Section title={t("예약자 정보")}>
+            {detail.customerName ? <InfoRow icon="person-outline" label={t("예약자")} value={detail.customerName} /> : null}
+            {detail.phone ? <InfoRow icon="call-outline" label={t("연락처")} value={detail.phone} selectable /> : null}
+            {fullAddress ? <InfoRow icon="location-outline" label={t("방문 주소")} value={fullAddress} selectable /> : null}
           </Section>
         ) : null}
 
         {detail.symptom ? (
-          <Section title="요청 증상">
+          <Section title={t("요청 증상")}>
             <Text style={styles.longText}>{detail.symptom}</Text>
           </Section>
         ) : null}
 
         {detail.memo ? (
-          <Section title="추가 메모">
+          <Section title={t("추가 메모")}>
             <Text style={styles.longText}>{detail.memo}</Text>
           </Section>
         ) : null}
 
-        <Section title="현장 사진 및 동영상">
+        <Section title={t("현장 사진 및 동영상")}>
           {attachmentsLoading ? (
             <View style={styles.mediaLoading} accessibilityRole="progressbar">
               <ActivityIndicator color={colors.primary} />
-              <Text style={styles.mediaLoadingText}>첨부 파일을 불러오고 있어요.</Text>
+              <Text style={styles.mediaLoadingText}>{t("첨부 파일을 불러오고 있어요.")}</Text>
             </View>
           ) : attachmentsError ? (
             <View style={styles.mediaLoadError} accessibilityRole="alert">
               <Ionicons name="cloud-offline-outline" size={21} color={colors.danger} />
-              <Text style={styles.mediaLoadErrorText}>{attachmentsError}</Text>
+              <Text style={styles.mediaLoadErrorText}>{t(attachmentsError)}</Text>
               <Button
-                label="다시 불러오기"
+                label={t("다시 불러오기")}
                 variant="secondary"
                 onPress={retry}
                 style={styles.mediaRetryButton}
@@ -970,7 +972,7 @@ function BookingDetailScreen() {
               />
               {localMedia.length > 0 ? (
                 <Button
-                  label={uploadingMedia ? '첨부 파일 업로드 중' : '선택한 파일 업로드'}
+                  label={uploadingMedia ? t('첨부 파일 업로드 중') : t('선택한 파일 업로드')}
                   icon="cloud-upload-outline"
                   onPress={() => void uploadLocalMedia()}
                   loading={uploadingMedia}
@@ -989,12 +991,12 @@ function BookingDetailScreen() {
         {mediaActionError ? (
           <View style={styles.cancelError} accessibilityRole="alert">
             <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.cancelErrorText}>{mediaActionError}</Text>
+            <Text style={styles.cancelErrorText}>{t(mediaActionError)}</Text>
           </View>
         ) : null}
 
         {isAdminView ? (
-          <Section title="예약 상태 관리">
+          <Section title={t("예약 상태 관리")}>
             <View style={styles.adminStatusActions}>
               {ADMIN_STATUS_ACTIONS.map(action => (
                 <Button
@@ -1008,7 +1010,7 @@ function BookingDetailScreen() {
                   }
                   loading={updatingAdminStatus === action.status}
                   onPress={() => updateAdminStatus(action.status)}
-                  accessibilityHint="관리자 권한으로 예약 상태를 변경합니다"
+                  accessibilityHint={t("관리자 권한으로 예약 상태를 변경합니다")}
                 />
               ))}
             </View>
@@ -1018,20 +1020,20 @@ function BookingDetailScreen() {
         {adminActionError ? (
           <View style={styles.cancelError} accessibilityRole="alert">
             <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.cancelErrorText}>{adminActionError}</Text>
+            <Text style={styles.cancelErrorText}>{t(adminActionError)}</Text>
           </View>
         ) : null}
 
         {!isAdminView && cancelError ? (
           <View style={styles.cancelError} accessibilityRole="alert">
             <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.cancelErrorText}>{cancelError}</Text>
+            <Text style={styles.cancelErrorText}>{t(cancelError)}</Text>
           </View>
         ) : null}
 
         {!isAdminView && CANCELLABLE_STATUSES.has(detail.status) ? (
           <Button
-            label="예약 취소"
+            label={t("예약 취소")}
             icon="close-circle-outline"
             variant="danger"
             loading={cancelling}
@@ -1041,12 +1043,12 @@ function BookingDetailScreen() {
               completingAttachmentId !== null
             }
             onPress={cancelBooking}
-            accessibilityHint="확인 후 이 예약을 취소합니다"
+            accessibilityHint={t("확인 후 이 예약을 취소합니다")}
             style={styles.cancelButton}
           />
         ) : null}
 
-        <Button label="목록으로 돌아가기" onPress={() => navigation.goBack()} variant="ghost" />
+        <Button label={t("목록으로 돌아가기")} onPress={() => navigation.goBack()} variant="ghost" />
         </View>
       </AppScreen>
       <BookingMediaViewer
@@ -1062,6 +1064,7 @@ function BookingDetailScreen() {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  useLocale();
   return (
     <View style={styles.sectionWrap}>
       <SectionTitle>{title}</SectionTitle>
@@ -1081,13 +1084,14 @@ function InfoRow({
   value: string;
   selectable?: boolean;
 }) {
+  useLocale();
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoIcon}>
         <Ionicons name={icon} size={19} color={colors.primary} />
       </View>
       <View style={styles.infoCopy}>
-        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoLabel}>{t(label)}</Text>
         <Text style={styles.infoValue} selectable={selectable}>{value}</Text>
       </View>
     </View>

@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import React from 'react';
 import {
   Image,
@@ -57,6 +58,7 @@ const APPLIANCES: Appliance[] = [
 ];
 
 export default function BookingMenu() {
+  useLocale();
   const navigation = useNavigation<BookingMenuNav>();
 
   const handleBack = () => navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
@@ -67,12 +69,12 @@ export default function BookingMenu() {
 
   return (
     <AppScreen scroll padded={false}>
-      <AppHeader title="서비스 예약" onBack={handleBack} />
+      <AppHeader title={t("서비스 예약")} onBack={handleBack} />
       <View style={styles.content}>
         <ProgressSteps steps={BOOKING_STEPS} current={0} />
         <PageIntro
-          title="어떤 가전을 관리할까요?"
-          description="서비스가 필요한 가전을 선택해 주세요. 이용 가능한 항목부터 순서대로 확대됩니다."
+          title={t("어떤 가전을 관리할까요?")}
+          description={t("서비스가 필요한 가전을 선택해 주세요. 이용 가능한 항목부터 순서대로 확대됩니다.")}
         />
 
         <View style={styles.grid}>
@@ -82,11 +84,11 @@ export default function BookingMenu() {
                 onPress={() => handleSelect(appliance)}
                 disabled={appliance.disabled}
                 accessibilityRole="button"
-                accessibilityLabel={appliance.label}
+                accessibilityLabel={t(appliance.label)}
                 accessibilityHint={
                   appliance.disabled
-                    ? '현재 준비 중인 서비스입니다'
-                    : '서비스 유형 선택 단계로 이동합니다'
+                    ? t('현재 준비 중인 서비스입니다')
+                    : t('서비스 유형 선택 단계로 이동합니다')
                 }
                 accessibilityState={{ disabled: Boolean(appliance.disabled) }}
                 style={({ pressed }) => [
@@ -106,16 +108,16 @@ export default function BookingMenu() {
 
                 <View style={styles.cardCopy}>
                   <Text style={[styles.cardTitle, appliance.disabled && styles.textDisabled]}>
-                    {appliance.label}
+                    {t(appliance.label)}
                   </Text>
                   <Text style={[styles.cardDescription, appliance.disabled && styles.textDisabled]}>
-                    {appliance.description}
+                    {t(appliance.description)}
                   </Text>
                 </View>
 
                 {appliance.disabled ? (
                   <View style={styles.statusPill}>
-                    <Text style={styles.statusText}>준비 중</Text>
+                    <Text style={styles.statusText}>{t("준비 중")}</Text>
                   </View>
                 ) : (
                   <Ionicons name="arrow-forward-circle" size={24} color={colors.primary} />

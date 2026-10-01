@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useEffect, useState } from 'react';
@@ -16,6 +17,7 @@ interface BookingMediaViewerProps {
 }
 
 function VideoContent({ url }: { readonly url: string }) {
+  useLocale();
   const player = useVideoPlayer(url);
   const [status, setStatus] = useState(player.status);
   useEffect(() => {
@@ -37,17 +39,18 @@ function VideoContent({ url }: { readonly url: string }) {
 }
 
 function MediaLoadError() {
+  useLocale();
   return (
     <View style={styles.center} accessibilityRole="alert">
       <Ionicons name="alert-circle-outline" size={42} color={colors.white} />
       <Text style={styles.message}>
-        파일을 불러오지 못했습니다. 네트워크를 확인한 뒤 닫고 다시 열어 주세요.
-      </Text>
+        {t("파일을 불러오지 못했습니다. 네트워크를 확인한 뒤 닫고 다시 열어 주세요.")}</Text>
     </View>
   );
 }
 
 function ImageContent({ url }: { readonly url: string }) {
+  useLocale();
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   if (failed) return <MediaLoadError />;
@@ -77,15 +80,16 @@ export function BookingMediaViewer({
   error = null,
   onRequestClose,
 }: BookingMediaViewerProps) {
+  useLocale();
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onRequestClose} statusBarTranslucent>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <Text style={styles.title}>{attachment?.kind === 'video' ? '동영상' : '사진'}</Text>
+          <Text style={styles.title}>{attachment?.kind === 'video' ? t('동영상') : t('사진')}</Text>
           <Pressable
             onPress={onRequestClose}
             accessibilityRole="button"
-            accessibilityLabel="첨부 파일 닫기"
+            accessibilityLabel={t("첨부 파일 닫기")}
             style={({ pressed }) => [styles.close, pressed && styles.pressed]}
           >
             <Ionicons name="close" size={27} color={colors.white} />
@@ -95,12 +99,12 @@ export function BookingMediaViewer({
           {!visible ? null : loading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={colors.white} />
-              <Text style={styles.message}>안전한 보기 주소를 불러오고 있어요.</Text>
+              <Text style={styles.message}>{t("안전한 보기 주소를 불러오고 있어요.")}</Text>
             </View>
           ) : error ? (
             <View style={styles.center}>
               <Ionicons name="alert-circle-outline" size={42} color={colors.white} />
-              <Text style={styles.message}>{error}</Text>
+              <Text style={styles.message}>{t(error)}</Text>
             </View>
           ) : attachment && url ? (
             attachment.kind === 'video' ? (

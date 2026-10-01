@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -77,6 +78,7 @@ function returnAddress(
 }
 
 function AddressSearchScreen() {
+  useLocale();
   const navigation = useNavigation<AddressNavigation>();
   const { returnTo } = useRoute<AddressRoute>().params;
   const { api, configurationError } = useAuth();
@@ -161,11 +163,11 @@ function AddressSearchScreen() {
 
   const emptyState = (
     <StateView
-      title={hasSearched ? '검색 결과가 없습니다' : '주소를 검색해 주세요'}
+      title={hasSearched ? t('검색 결과가 없습니다') : t('주소를 검색해 주세요')}
       message={
         hasSearched
-          ? '도로명과 건물번호를 함께 입력하면 더 정확하게 찾을 수 있습니다.'
-          : '도로명, 건물명 또는 지번으로 방문 주소를 찾을 수 있습니다.'
+          ? t('도로명과 건물번호를 함께 입력하면 더 정확하게 찾을 수 있습니다.')
+          : t('도로명, 건물명 또는 지번으로 방문 주소를 찾을 수 있습니다.')
       }
       icon={hasSearched ? 'search-outline' : 'location-outline'}
     />
@@ -173,11 +175,11 @@ function AddressSearchScreen() {
 
   return (
     <AppScreen padded={false} keyboardAware>
-      <AppHeader title="주소 검색" onBack={() => navigation.goBack()} />
+      <AppHeader title={t("주소 검색")} onBack={() => navigation.goBack()} />
       <View style={styles.content}>
         <PageIntro
-          title="방문 주소 찾기"
-          description="검색 결과에서 기본 주소를 고른 뒤 상세주소를 입력하세요."
+          title={t("방문 주소 찾기")}
+          description={t("검색 결과에서 기본 주소를 고른 뒤 상세주소를 입력하세요.")}
         />
 
         <View style={styles.searchRow}>
@@ -190,19 +192,19 @@ function AddressSearchScreen() {
                 if (error) setError(null);
               }}
               onSubmitEditing={() => void search()}
-              placeholder="예: 테헤란로 123"
+              placeholder={t("예: 테헤란로 123")}
               placeholderTextColor={colors.disabled}
               returnKeyType="search"
               autoCorrect={false}
-              accessibilityLabel="검색할 주소"
-              accessibilityHint="도로명, 건물명 또는 지번을 입력하세요"
+              accessibilityLabel={t("검색할 주소")}
+              accessibilityHint={t("도로명, 건물명 또는 지번을 입력하세요")}
               style={styles.searchInput}
             />
             {query ? (
               <Pressable
                 onPress={clearSearch}
                 accessibilityRole="button"
-                accessibilityLabel="검색어 지우기"
+                accessibilityLabel={t("검색어 지우기")}
                 hitSlop={8}
                 style={({ pressed }) => pressed && styles.pressed}
               >
@@ -214,7 +216,7 @@ function AddressSearchScreen() {
             onPress={() => void search()}
             disabled={loading}
             accessibilityRole="button"
-            accessibilityLabel="주소 검색"
+            accessibilityLabel={t("주소 검색")}
             accessibilityState={{ disabled: loading, busy: loading }}
             style={({ pressed }) => [
               styles.searchButton,
@@ -223,20 +225,20 @@ function AddressSearchScreen() {
             ]}
           >
             <Ionicons name="search" size={19} color={colors.white} />
-            <Text style={styles.searchButtonText}>검색</Text>
+            <Text style={styles.searchButtonText}>{t("검색")}</Text>
           </Pressable>
         </View>
 
         {error ? (
           <View style={styles.errorBanner} accessibilityRole="alert">
             <Ionicons name="warning-outline" size={18} color={colors.danger} />
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>{t(error)}</Text>
           </View>
         ) : null}
 
         <View style={styles.resultsWrap}>
           {loading ? (
-            <StateView title="주소를 검색하는 중입니다" loading />
+            <StateView title={t("주소를 검색하는 중입니다")} loading />
           ) : (
             <FlatList
               ref={resultList}
@@ -249,24 +251,24 @@ function AddressSearchScreen() {
                   <View style={styles.selectedHeading}>
                     <Ionicons name="checkmark-circle" size={22} color={colors.success} />
                     <View style={styles.selectedCopy}>
-                      <Text style={styles.selectedLabel}>선택한 주소</Text>
+                      <Text style={styles.selectedLabel}>{t("선택한 주소")}</Text>
                       <Text style={styles.selectedAddress}>{primaryAddress(selected)}</Text>
                     </View>
                   </View>
                   <FormField
-                    label="상세주소"
+                    label={t("상세주소")}
                     value={detail}
                     onChangeText={setDetail}
-                    placeholder="동, 호수 등 (선택)"
+                    placeholder={t("동, 호수 등 (선택)")}
                     returnKeyType="done"
                     onSubmitEditing={confirm}
-                    helper="상세주소가 없다면 비워 두어도 됩니다."
+                    helper={t("상세주소가 없다면 비워 두어도 됩니다.")}
                   />
                   <Button
-                    label="이 주소 사용"
+                    label={t("이 주소 사용")}
                     icon="arrow-forward"
                     onPress={confirm}
-                    accessibilityHint="선택한 주소를 이전 화면에 적용합니다"
+                    accessibilityHint={t("선택한 주소를 이전 화면에 적용합니다")}
                   />
                 </Card>
               ) : null}
@@ -308,7 +310,7 @@ function AddressSearchScreen() {
                     </View>
                     <View style={styles.addressCopy}>
                       <Text style={styles.primaryAddress}>{address}</Text>
-                      {secondary ? <Text style={styles.secondaryAddress}>지번 {secondary}</Text> : null}
+                      {secondary ? <Text style={styles.secondaryAddress}>{t("지번")}{secondary}</Text> : null}
                       {building ? <Text style={styles.buildingName}>{building}</Text> : null}
                     </View>
                   </Pressable>

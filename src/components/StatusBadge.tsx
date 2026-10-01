@@ -1,4 +1,5 @@
 import React from 'react';
+import { t, useLocale } from '../i18n';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, fonts, radius, spacing } from '../theme/tokens';
 
@@ -16,6 +17,7 @@ const STATUS = {
 } as const;
 
 export function StatusBadge({ status }: { status: string }) {
+  useLocale();
   const item = STATUS[status as keyof typeof STATUS] ?? {
     label: status,
     color: colors.textSecondary,
@@ -24,7 +26,7 @@ export function StatusBadge({ status }: { status: string }) {
 
   return (
     <View style={[styles.badge, { backgroundColor: item.background }]}>
-      <Text style={[styles.label, { color: item.color }]}>{item.label}</Text>
+      <Text style={[styles.label, { color: item.color }]}>{t(item.label)}</Text>
     </View>
   );
 }

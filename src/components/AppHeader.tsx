@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +14,7 @@ type AppHeaderProps = {
 };
 
 export function AppHeader({ title, eyebrow, onBack, action, showBrand = false }: AppHeaderProps) {
+  useLocale();
   return (
     <View style={styles.header}>
       <View style={styles.leading}>
@@ -21,7 +23,7 @@ export function AppHeader({ title, eyebrow, onBack, action, showBrand = false }:
             onPress={onBack}
             style={({ pressed }) => [styles.back, pressed && styles.pressed]}
             accessibilityRole="button"
-            accessibilityLabel="뒤로 가기"
+            accessibilityLabel={t("뒤로 가기")}
             hitSlop={8}
           >
             <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -34,8 +36,8 @@ export function AppHeader({ title, eyebrow, onBack, action, showBrand = false }:
       </View>
 
       <View style={styles.titleWrap} pointerEvents="none">
-        {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-        {title ? <Text style={styles.title} numberOfLines={1}>{title}</Text> : null}
+        {eyebrow ? <Text style={styles.eyebrow}>{t(eyebrow)}</Text> : null}
+        {title ? <Text style={styles.title} numberOfLines={1}>{t(title)}</Text> : null}
       </View>
 
       <View style={styles.trailing}>{action ?? <View style={styles.placeholder} />}</View>
